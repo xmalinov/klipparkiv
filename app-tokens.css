@@ -1,0 +1,34 @@
+/* Tokens copied from ytdlp-gui/src/styles/tokens.css (dark theme), so the page and the app share one system. */
+:root {
+  color-scheme: dark;
+  --bg: #101216;
+  --surface: #16181d;
+  --surface-2: #1c1f25;
+  --surface-3: #24272e;
+  --border: #23262d;
+  --border-strong: #33373f;
+  --text: #e8eaed;
+  --text-muted: #8d94a0;
+  --text-dim: #626974;
+  --accent: #6f9bff;
+  --accent-hover: #8aaeff;
+  --accent-press: #5a87ef;
+  --accent-fg: #0e1116;
+  --accent-soft: rgba(111, 155, 255, 0.12);
+
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
+
+  --radius: 4px;
+  --radius-card: 8px;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --space-6: 32px; --space-7: 40px; --space-8: 48px; --space-9: 56px; --space-10: 72px;
+
+  --container: 1120px;
+  --gutter: 32px;
+
+  --dur: 120ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+

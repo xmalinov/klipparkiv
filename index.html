@@ -1,16 +1,131 @@
 <!doctype html>
-<html lang="ru" data-theme="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Klipparkiv</title>
-    <style>
-      html { background: #101216; }
-    </style>
-  </head>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>klipparkiv, a portable windows GUI for yt-dlp</title>
+<meta name="description" content="Audio, video and timecode clips from any yt-dlp link, kept in a library. A portable Windows app, no installer.">
+<link rel="alternate" hreflang="ru" href="ru/">
+<link rel="stylesheet" href="page.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<header class="nav">
+  <div class="container nav__row">
+    <a class="wordmark" href="./" aria-label="klipparkiv, home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      klipparkiv
+    </a>
+    <nav class="nav__links" aria-label="sections">
+      <a href="#flow">what it does</a>
+      <a href="https://github.com/xmalinov/klipparkiv">github</a>
+      <a href="ru/" class="lang" hreflang="ru" lang="ru" aria-label="read this page in russian">ru</a>
+      <a class="btn btn--quiet btn--small" href="#download">download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="container hero__grid">
+      <div>
+        <h1>Download, cut, keep</h1>
+        <p class="lead">yt-dlp without the terminal: audio, video, timecode clips and a library.</p>
+        <div class="actions">
+          <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Download for Windows</a>
+          <a class="btn btn--quiet" href="https://github.com/xmalinov/klipparkiv/releases">All releases</a>
+        </div>
+        <ul class="facts">
+          <li>Windows 10 and 11, x64</li>
+          <li>100 MB</li>
+          <li>No installer</li>
+        </ul>
+      </div>
+      <figure class="shot">
+        <img src="assets/download.png" width="1000" height="700" alt="the download screen: a pasted link with its title and formats, above an empty queue" fetchpriority="high" decoding="async">
+      </figure>
+    </div>
+  </section>
+
+  <section class="section" id="flow">
+    <div class="container flow">
+      <div>
+        <h2>From a link to a file</h2>
+        <dl class="flow__list">
+          <div>
+            <dt>Link</dt>
+            <dd>Title, channel, duration and formats before anything downloads.</dd>
+          </div>
+          <div>
+            <dt>Format</dt>
+            <dd>MP3 128-320 kbps or MP4 480p-2160p, or both files at once.</dd>
+          </div>
+          <div>
+            <dt>Clip</dt>
+            <dd>Timecode cut, <code>00:01:30-00:05:00</code>, audio or video.</dd>
+          </div>
+          <div>
+            <dt>Queue</dt>
+            <dd>1-4 downloads at a time, pause, resume, cancel.</dd>
+          </div>
+          <div>
+            <dt>Library</dt>
+            <dd>Covers, search, filters, open in the system player.</dd>
+          </div>
+          <div>
+            <dt>Archive</dt>
+            <dd>What you already saved is skipped next time.</dd>
+          </div>
+        </dl>
+      </div>
+      <figure class="shot">
+        <img src="assets/library.png" width="1000" height="700" alt="the library: saved files with covers, durations and sizes, with search and filters above" loading="lazy" decoding="async">
+      </figure>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="container band__grid">
+      <h2>Windows 10 or 11, x64</h2>
+      <p>WebView2 is already installed. The app needs about 250 MB and a folder it can write to. Use exFAT or NTFS for files over 4 GB, FAT32 cannot hold them.</p>
+    </div>
+  </section>
+
+  <section class="close" id="download">
+    <div class="container close__grid">
+      <div>
+        <h2>Unpack and run</h2>
+        <p>The zip carries yt-dlp and ffmpeg, so nothing else is installed. The build is unsigned: SmartScreen asks once, “More info”, then “Run anyway”. Settings and the index stay in <code>data\</code>, media in <code>audio\</code> and <code>video\</code>.</p>
+        <div class="actions">
+          <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Download for Windows</a>
+          <a class="btn btn--quiet" href="https://github.com/xmalinov/klipparkiv">Source on GitHub</a>
+        </div>
+      </div>
+      <ul class="zip" aria-label="what is inside the zip">
+        <li><b>klipparkiv.exe</b><span>the app</span></li>
+        <li><b>bin\yt-dlp.exe</b><span>the downloader</span></li>
+        <li><b>bin\ffmpeg.exe</b><span>muxing and cuts</span></li>
+        <li><b>bin\ffprobe.exe</b><span>formats and duration</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer__row">
+      <p class="footer__statement">klipparkiv keeps what you save.</p>
+      <nav class="footer__links" aria-label="links">
+        <a href="https://github.com/xmalinov/klipparkiv">github</a>
+        <a href="https://github.com/xmalinov/klipparkiv/releases">releases</a>
+        <a href="https://github.com/xmalinov/klipparkiv/blob/main/LICENSE">MIT licence</a>
+        <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>
+        <a href="https://ffmpeg.org">ffmpeg</a>
+      </nav>
+    </div>
+    <p class="footer__legal">Not affiliated with YouTube, Google, yt-dlp or FFmpeg.</p>
+  </div>
+</footer>
+</body>
 </html>

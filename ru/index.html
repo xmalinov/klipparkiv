@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>klipparkiv, портативное приложение для yt-dlp на windows</title>
+<meta name="description" content="Аудио, видео и клипы по таймкоду из любой ссылки yt-dlp, в одной библиотеке. Портативное приложение для Windows без установки.">
+<link rel="alternate" hreflang="en" href="../">
+<link rel="stylesheet" href="../page.css">
+</head>
+<body>
+<a class="skip" href="#main">Перейти к содержанию</a>
+
+<header class="nav">
+  <div class="container nav__row">
+    <a class="wordmark" href="./" aria-label="klipparkiv, на главную">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      klipparkiv
+    </a>
+    <nav class="nav__links" aria-label="разделы">
+      <a href="#flow">что умеет</a>
+      <a href="https://github.com/xmalinov/klipparkiv">github</a>
+      <a href="../" class="lang" hreflang="en" lang="en" aria-label="read this page in english">en</a>
+      <a class="btn btn--quiet btn--small" href="#download">скачать</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="container hero__grid">
+      <div>
+        <h1>Скачать, нарезать, сохранить</h1>
+        <p class="lead">yt-dlp без терминала: аудио, видео, клипы по таймкоду и библиотека.</p>
+        <div class="actions">
+          <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Скачать для Windows</a>
+          <a class="btn btn--quiet" href="https://github.com/xmalinov/klipparkiv/releases">Все релизы</a>
+        </div>
+        <ul class="facts">
+          <li>Windows 10 и 11, x64</li>
+          <li>100 МБ</li>
+          <li>Без установки</li>
+        </ul>
+      </div>
+      <figure class="shot">
+        <img src="../assets/download.png" width="1000" height="700" alt="экран загрузки: вставленная ссылка с названием и форматами, ниже очередь" fetchpriority="high" decoding="async">
+      </figure>
+    </div>
+  </section>
+
+  <section class="section" id="flow">
+    <div class="container flow">
+      <div>
+        <h2>От ссылки до файла</h2>
+        <dl class="flow__list">
+          <div>
+            <dt>Ссылка</dt>
+            <dd>Название, канал, длительность и форматы до начала загрузки.</dd>
+          </div>
+          <div>
+            <dt>Формат</dt>
+            <dd>MP3 128-320 кбит/с или MP4 480p-2160p, можно оба файла сразу.</dd>
+          </div>
+          <div>
+            <dt>Клип</dt>
+            <dd>Нарезка по таймкоду, <code>00:01:30-00:05:00</code>, аудио или видео.</dd>
+          </div>
+          <div>
+            <dt>Очередь</dt>
+            <dd>1-4 загрузки одновременно, пауза, продолжение, отмена.</dd>
+          </div>
+          <div>
+            <dt>Библиотека</dt>
+            <dd>Обложки, поиск, фильтры, открытие в системном плеере.</dd>
+          </div>
+          <div>
+            <dt>Архив</dt>
+            <dd>Уже сохранённое пропускается при следующем запуске.</dd>
+          </div>
+        </dl>
+      </div>
+      <figure class="shot">
+        <img src="../assets/library.png" width="1000" height="700" alt="библиотека: сохранённые файлы с обложками, длительностью и размером, сверху поиск и фильтры" loading="lazy" decoding="async">
+      </figure>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="container band__grid">
+      <h2>Windows 10 или 11, x64</h2>
+      <p>WebView2 уже есть в системе. Приложению нужно около 250 МБ и папка с правом записи. Для файлов больше 4 ГБ подойдёт exFAT или NTFS, FAT32 их не сохранит.</p>
+    </div>
+  </section>
+
+  <section class="close" id="download">
+    <div class="container close__grid">
+      <div>
+        <h2>Распаковать и запустить</h2>
+        <p>В архиве уже есть yt-dlp и ffmpeg, доустанавливать ничего не нужно. Сборка без подписи: SmartScreen спросит один раз, «Подробнее», затем «Выполнить». Настройки и индекс лежат в <code>data\</code>, медиа в <code>audio\</code> и <code>video\</code>.</p>
+        <div class="actions">
+          <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Скачать для Windows</a>
+          <a class="btn btn--quiet" href="https://github.com/xmalinov/klipparkiv">Исходники на GitHub</a>
+        </div>
+      </div>
+      <ul class="zip" aria-label="что лежит в архиве">
+        <li><b>klipparkiv.exe</b><span>приложение</span></li>
+        <li><b>bin\yt-dlp.exe</b><span>загрузчик</span></li>
+        <li><b>bin\ffmpeg.exe</b><span>склейка и нарезка</span></li>
+        <li><b>bin\ffprobe.exe</b><span>форматы и длительность</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer__row">
+      <p class="footer__statement">klipparkiv хранит то, что вы сохранили.</p>
+      <nav class="footer__links" aria-label="ссылки">
+        <a href="https://github.com/xmalinov/klipparkiv">github</a>
+        <a href="https://github.com/xmalinov/klipparkiv/releases">релизы</a>
+        <a href="https://github.com/xmalinov/klipparkiv/blob/main/LICENSE">лицензия MIT</a>
+        <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>
+        <a href="https://ffmpeg.org">ffmpeg</a>
+      </nav>
+    </div>
+    <p class="footer__legal">Не связан с YouTube, Google, yt-dlp и FFmpeg.</p>
+  </div>
+</footer>
+</body>
+</html>
