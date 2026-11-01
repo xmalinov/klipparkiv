@@ -7,6 +7,8 @@ describe("library formatters", () => {
     expect(formatBytes(240_000_000)).toBe("228,9 МБ");
     expect(formatBytes(2_200_000_000)).toBe("2,0 ГБ");
     expect(formatBytes(500)).toBe("1 КБ");
+    expect(formatBytes(8_400_000, "en")).toBe("8.0 MB");
+    expect(formatBytes(2_200_000_000, "en")).toBe("2.0 GB");
   });
 
   it("pluralizes file counts", () => {
@@ -15,10 +17,13 @@ describe("library formatters", () => {
     expect(formatFileCount(5)).toBe("5 файлов");
     expect(formatFileCount(21)).toBe("21 файл");
     expect(formatFileCount(11)).toBe("11 файлов");
+    expect(formatFileCount(1, "en")).toBe("1 file");
+    expect(formatFileCount(2, "en")).toBe("2 files");
   });
 
   it("formats dates as day.month", () => {
     expect(formatItemDate(1_760_000_000)).toMatch(/^\d{2}\.\d{2}$/);
+    expect(formatItemDate(1_760_000_000, "en")).toMatch(/^\d{2}\/\d{2}$/);
     expect(formatItemDate(0)).toBe("");
   });
 

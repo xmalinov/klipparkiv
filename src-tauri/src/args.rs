@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use crate::i18n;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Audio,
@@ -133,12 +135,35 @@ pub enum ArgsError {
 
 impl std::fmt::Display for ArgsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let english = i18n::is_english();
         match self {
-            ArgsError::EmptyUrl => write!(f, "url is empty"),
-            ArgsError::EmptyClipTime => write!(f, "clip start and end are required"),
-            ArgsError::InvalidClipTime => {
-                write!(f, "clip time must be MM:SS or HH:MM:SS and start < end")
-            }
+            ArgsError::EmptyUrl => write!(
+                f,
+                "{}",
+                if english {
+                    "url is empty"
+                } else {
+                    "ссылка не указана"
+                }
+            ),
+            ArgsError::EmptyClipTime => write!(
+                f,
+                "{}",
+                if english {
+                    "clip start and end are required"
+                } else {
+                    "нужны начало и конец клипа"
+                }
+            ),
+            ArgsError::InvalidClipTime => write!(
+                f,
+                "{}",
+                if english {
+                    "clip time must be MM:SS or HH:MM:SS and start < end"
+                } else {
+                    "время клипа должно быть MM:SS или HH:MM:SS, начало раньше конца"
+                }
+            ),
         }
     }
 }

@@ -4,6 +4,8 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::i18n;
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoInfo {
@@ -37,7 +39,12 @@ pub async fn probe(exe: &Path, url: &str) -> Result<VideoInfo, String> {
     let output = crate::process::prepare(exe, &probe_args(url))
         .output()
         .await
-        .map_err(|error| format!("не удалось запустить yt-dlp: {error}"))?;
+        .map_err(|error| {
+            i18n::tf(
+                || format!("не удалось запустить yt-dlp: {error}"),
+                || format!("could not start yt-dlp: {error}"),
+            )
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -45,7 +52,13 @@ pub async fn probe(exe: &Path, url: &str) -> Result<VideoInfo, String> {
             .lines()
             .rev()
             .find(|line| line.starts_with("ERROR"))
-            .unwrap_or("yt-dlp не смог прочитать метаданные");
+            .map(str::to_owned)
+            .unwrap_or_else(|| {
+                i18n::t(
+                    "yt-dlp не смог прочитать метаданные",
+                    "yt-dlp could not read the metadata",
+                )
+            });
         return Err(reason.trim().to_string());
     }
 
@@ -55,10 +68,15 @@ pub async fn probe(exe: &Path, url: &str) -> Result<VideoInfo, String> {
 
 /// Parses the single JSON object printed by `--dump-single-json`.
 pub fn parse_json(raw: &str) -> Result<VideoInfo, String> {
-    let value: Value = serde_json::from_str(raw.trim())
-        .map_err(|error| format!("некорректный JSON от yt-dlp: {error}"))?;
+    let value: Value = serde_json::from_str(raw.trim()).map_err(|error| {
+        i18n::tf(
+            || format!("некорректный JSON от yt-dlp: {error}"),
+            || format!("invalid JSON from yt-dlp: {error}"),
+        )
+    })?;
 
-    let id = string_field(&value, "id").ok_or_else(|| "в ответе нет id видео".to_string())?;
+    let id = string_field(&value, "id")
+        .ok_or_else(|| i18n::t("в ответе нет id видео", "the response has no video id"))?;
     let title = string_field(&value, "title").unwrap_or_else(|| id.clone());
 
     Ok(VideoInfo {

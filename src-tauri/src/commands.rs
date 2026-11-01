@@ -10,6 +10,7 @@ use tauri_plugin_notification::NotificationExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::args::{self, ArgsRequest, ClipSpec, Mode, Quality};
+use crate::i18n;
 use crate::metadata;
 use crate::paths::PortablePaths;
 use crate::process;
@@ -235,7 +236,10 @@ pub fn parse_modes(raw: &str) -> Result<Vec<Mode>, String> {
         "audio" => Ok(vec![Mode::Audio]),
         "video" => Ok(vec![Mode::Video]),
         "both" => Ok(vec![Mode::Audio, Mode::Video]),
-        other => Err(format!("неизвестный режим: {other}")),
+        other => Err(i18n::tf(
+            || format!("неизвестный режим: {other}"),
+            || format!("unknown mode: {other}"),
+        )),
     }
 }
 
@@ -247,7 +251,10 @@ pub fn parse_quality(raw: Option<&str>) -> Result<Quality, String> {
         "720" => Ok(Quality::P720),
         "480" => Ok(Quality::P480),
         "best" => Ok(Quality::Best),
-        other => Err(format!("неизвестное качество: {other}")),
+        other => Err(i18n::tf(
+            || format!("неизвестное качество: {other}"),
+            || format!("unknown quality: {other}"),
+        )),
     }
 }
 
@@ -256,7 +263,10 @@ pub fn parse_audio_kbps(raw: Option<u32>) -> Result<u32, String> {
     if [128, 192, 256, 320].contains(&kbps) {
         Ok(kbps)
     } else {
-        Err(format!("неизвестный битрейт аудио: {kbps}"))
+        Err(i18n::tf(
+            || format!("неизвестный битрейт аудио: {kbps}"),
+            || format!("unknown audio bitrate: {kbps}"),
+        ))
     }
 }
 
@@ -268,17 +278,23 @@ pub fn parse_clip(start: Option<&str>, end: Option<&str>) -> Result<Option<ClipS
                 .map(Some)
                 .map_err(|error| error.to_string())
         }
-        _ => Err("Укажите начало и конец клипа".into()),
+        _ => Err(i18n::t(
+            "Укажите начало и конец клипа",
+            "Specify both clip start and end",
+        )),
     }
 }
 
 pub fn validate_url(raw: &str) -> Result<String, String> {
     let url = raw.trim();
     if url.is_empty() {
-        return Err("Вставьте ссылку".into());
+        return Err(i18n::t("Вставьте ссылку", "Paste a link"));
     }
     if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err("Ссылка должна начинаться с http:// или https://".into());
+        return Err(i18n::t(
+            "Ссылка должна начинаться с http:// или https://",
+            "The link must start with http:// or https://",
+        ));
     }
     Ok(url.to_string())
 }
@@ -297,22 +313,44 @@ pub fn parse_list(text: &str) -> Result<Vec<BatchEntry>, String> {
             continue;
         }
         let mut parts = line.split_whitespace();
-        let url = parts
-            .next()
-            .ok_or_else(|| format!("строка {}: пустая ссылка", index + 1))?;
-        let url = validate_url(url).map_err(|error| format!("строка {}: {error}", index + 1))?;
+        let url = parts.next().ok_or_else(|| {
+            i18n::tf(
+                || format!("строка {}: пустая ссылка", index + 1),
+                || format!("line {}: empty link", index + 1),
+            )
+        })?;
+        let url = validate_url(url).map_err(|error| {
+            i18n::tf(
+                || format!("строка {}: {error}", index + 1),
+                || format!("line {}: {error}", index + 1),
+            )
+        })?;
 
         let clip = match parts.next() {
             None => None,
             Some(range) => {
                 let (start, end) = range.split_once('-').ok_or_else(|| {
-                    format!(
-                        "строка {}: таймкод должен быть вида 00:01:30-00:05:00",
-                        index + 1
+                    i18n::tf(
+                        || {
+                            format!(
+                                "строка {}: таймкод должен быть вида 00:01:30-00:05:00",
+                                index + 1
+                            )
+                        },
+                        || {
+                            format!(
+                                "line {}: timecode must look like 00:01:30-00:05:00",
+                                index + 1
+                            )
+                        },
                     )
                 })?;
-                let clip = ClipSpec::parse(start, end)
-                    .map_err(|error| format!("строка {}: {error}", index + 1))?;
+                let clip = ClipSpec::parse(start, end).map_err(|error| {
+                    i18n::tf(
+                        || format!("строка {}: {error}", index + 1),
+                        || format!("line {}: {error}", index + 1),
+                    )
+                })?;
                 Some(clip)
             }
         };
@@ -320,12 +358,18 @@ pub fn parse_list(text: &str) -> Result<Vec<BatchEntry>, String> {
         entries.push(BatchEntry { url, clip });
 
         if entries.len() > MAX_BATCH_LINES {
-            return Err(format!("в файле больше {MAX_BATCH_LINES} ссылок"));
+            return Err(i18n::tf(
+                || format!("в файле больше {MAX_BATCH_LINES} ссылок"),
+                || format!("the file contains more than {MAX_BATCH_LINES} links"),
+            ));
         }
     }
 
     if entries.is_empty() {
-        return Err("в файле не найдено ссылок".into());
+        return Err(i18n::t(
+            "в файле не найдено ссылок",
+            "no links found in the file",
+        ));
     }
     Ok(entries)
 }
@@ -337,6 +381,13 @@ fn emit_state(app: &AppHandle, snapshot: &TaskSnapshot) {
 fn emit_queue(app: &AppHandle) {
     let state = app.state::<Arc<TaskStore>>().queue_state();
     let _ = app.emit("queue://changed", state);
+}
+
+fn folder_error(error: std::io::Error) -> String {
+    i18n::tf(
+        || format!("нет доступа к папке: {error}"),
+        || format!("cannot access the folder: {error}"),
+    )
 }
 
 fn enqueue_for_mode(
@@ -362,14 +413,13 @@ fn enqueue_for_mode(
             paths.root().join(subdir)
         }
     };
-    std::fs::create_dir_all(&out_dir).map_err(|error| format!("нет доступа к папке: {error}"))?;
+    std::fs::create_dir_all(&out_dir).map_err(folder_error)?;
 
     let archive = paths.data().join(args::archive_file(mode, clip.is_some()));
-    std::fs::create_dir_all(paths.data())
-        .map_err(|error| format!("нет доступа к папке: {error}"))?;
+    std::fs::create_dir_all(paths.data()).map_err(folder_error)?;
 
     let thumbs = paths.thumbs();
-    std::fs::create_dir_all(&thumbs).map_err(|error| format!("нет доступа к папке: {error}"))?;
+    std::fs::create_dir_all(&thumbs).map_err(folder_error)?;
 
     let argv = args::build(&ArgsRequest {
         url,
@@ -464,9 +514,12 @@ fn task_finished(app: &AppHandle) {
             .count();
         if done + failed > 0 {
             let body = if failed == 0 {
-                format!("Готово: {done}")
+                i18n::tf(|| format!("Готово: {done}"), || format!("Done: {done}"))
             } else {
-                format!("Готово: {done}, ошибок: {failed}")
+                i18n::tf(
+                    || format!("Готово: {done}, ошибок: {failed}"),
+                    || format!("Done: {done}, errors: {failed}"),
+                )
             };
             let _ = app
                 .notification()
@@ -495,10 +548,16 @@ pub fn enqueue_task(app: AppHandle, task: NewTask) -> Result<Vec<TaskSnapshot>, 
         Some(dir) => {
             let path = PathBuf::from(dir);
             if !path.is_absolute() {
-                return Err("Папка назначения должна быть абсолютным путём".into());
+                return Err(i18n::t(
+                    "Папка назначения должна быть абсолютным путём",
+                    "The destination folder must be an absolute path",
+                ));
             }
             if !path.is_dir() {
-                return Err("Папка назначения не найдена".into());
+                return Err(i18n::t(
+                    "Папка назначения не найдена",
+                    "The destination folder was not found",
+                ));
             }
             Some(path)
         }
@@ -528,8 +587,12 @@ pub fn enqueue_batch(app: AppHandle, request: BatchRequest) -> Result<Vec<TaskSn
     let modes = parse_modes(&request.mode)?;
     let quality = parse_quality(request.quality.as_deref())?;
 
-    let text = std::fs::read(&request.path)
-        .map_err(|error| format!("не удалось прочитать файл: {error}"))?;
+    let text = std::fs::read(&request.path).map_err(|error| {
+        i18n::tf(
+            || format!("не удалось прочитать файл: {error}"),
+            || format!("could not read the file: {error}"),
+        )
+    })?;
     let entries = parse_list(&String::from_utf8_lossy(&text))?;
 
     let mut created = Vec::new();
@@ -605,7 +668,10 @@ async fn run_task(app: AppHandle, id: String, exe: PathBuf, argv: Vec<OsString>)
             store.finish(
                 &id,
                 STATE_FAILED,
-                Some(format!("не удалось запустить yt-dlp: {error}")),
+                Some(i18n::tf(
+                    || format!("не удалось запустить yt-dlp: {error}"),
+                    || format!("could not start yt-dlp: {error}"),
+                )),
             );
             if let Some(snapshot) = store.snapshot(&id) {
                 emit_state(&app, &snapshot);
@@ -671,7 +737,7 @@ async fn run_task(app: AppHandle, id: String, exe: PathBuf, argv: Vec<OsString>)
             .find(|line| !line.trim().is_empty())
             .cloned()
             .or_else(|| status.err().map(|error| error.to_string()))
-            .unwrap_or_else(|| "yt-dlp завершился с ошибкой".to_string());
+            .unwrap_or_else(|| i18n::t("yt-dlp завершился с ошибкой", "yt-dlp failed"));
         store.finish(&id, STATE_FAILED, Some(reason));
     }
 
@@ -778,6 +844,7 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Result<Settings, Str
     let saved = app.state::<SettingsStore>().save(settings)?;
     app.state::<Arc<TaskStore>>()
         .set_concurrency(saved.concurrency);
+    crate::refresh_tray_language(&app);
     Ok(saved)
 }
 
@@ -791,7 +858,12 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
     let output = process::prepare(&exe, &[OsString::from("--update")])
         .output()
         .await
-        .map_err(|error| format!("не удалось запустить обновление: {error}"))?;
+        .map_err(|error| {
+            i18n::tf(
+                || format!("не удалось запустить обновление: {error}"),
+                || format!("could not start the update: {error}"),
+            )
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -799,14 +871,20 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
             .lines()
             .rev()
             .find(|line| !line.trim().is_empty())
-            .unwrap_or("yt-dlp не обновился");
+            .map(str::to_owned)
+            .unwrap_or_else(|| i18n::t("yt-dlp не обновился", "yt-dlp was not updated"));
         return Err(reason.trim().to_string());
     }
 
     crate::binaries::read_version(&exe, "--version")
         .as_deref()
         .and_then(crate::binaries::parse_ytdlp_version)
-        .ok_or_else(|| "версия после обновления не определена".to_string())
+        .ok_or_else(|| {
+            i18n::t(
+                "версия после обновления не определена",
+                "could not detect the version after the update",
+            )
+        })
 }
 
 #[cfg(test)]

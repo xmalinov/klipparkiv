@@ -4,15 +4,20 @@ import { applyTheme, getSettings } from "./api/settings";
 import DownloadScreen from "./features/download/DownloadScreen";
 import LibraryScreen from "./features/library/LibraryScreen";
 import SettingsDialog from "./features/settings/SettingsDialog";
+import { useI18n, type Translate } from "./i18n";
 import "./styles/tokens.css";
 import "./App.css";
 
 type Screen = "download" | "library";
 
-const NAV: { id: Screen; label: string; icon: React.ReactNode }[] = [
+const NAV: {
+  id: Screen;
+  labelKey: "nav.download" | "nav.library";
+  icon: React.ReactNode;
+}[] = [
   {
     id: "download",
-    label: "Загрузка",
+    labelKey: "nav.download",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 3v12" />
@@ -23,7 +28,7 @@ const NAV: { id: Screen; label: string; icon: React.ReactNode }[] = [
   },
   {
     id: "library",
-    label: "Библиотека",
+    labelKey: "nav.library",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -33,9 +38,9 @@ const NAV: { id: Screen; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
-function environmentWarnings(info: AppInfo): string[] {
+function environmentWarnings(info: AppInfo, t: Translate): string[] {
   const warnings: string[] = [];
-  if (!info.writable) warnings.push("Нет прав на запись в папку приложения");
+  if (!info.writable) warnings.push(t("app.notWritable"));
   const missing = [
     ["yt-dlp", info.ytdlp],
     ["ffmpeg", info.ffmpeg],
@@ -44,12 +49,13 @@ function environmentWarnings(info: AppInfo): string[] {
     .filter(([, version]) => version === null)
     .map(([name]) => name);
   if (missing.length > 0) {
-    warnings.push(`Не найдены в bin\\: ${missing.join(", ")}`);
+    warnings.push(t("app.missingBinaries", { names: missing.join(", ") }));
   }
   return warnings;
 }
 
 export default function App() {
+  const { t } = useI18n();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>("download");
@@ -81,7 +87,7 @@ export default function App() {
     };
   }, []);
 
-  const warnings = info ? environmentWarnings(info) : [];
+  const warnings = info ? environmentWarnings(info, t) : [];
 
   return (
     <div className="app">
@@ -95,20 +101,20 @@ export default function App() {
             onClick={() => setScreen(item.id)}
           >
             {item.icon}
-            <span>{item.label}</span>
+            <span>{t(item.labelKey)}</span>
           </button>
         ))}
       </aside>
 
       <div className="main">
         <header className="header">
-          <h1>{screen === "download" ? "Загрузка" : "Библиотека"}</h1>
+          <h1>{screen === "download" ? t("nav.download") : t("nav.library")}</h1>
           <div className="header-right">
-            <span>портативный режим</span>
+            <span>{t("app.portableMode")}</span>
             <button
               type="button"
               className="icon-btn"
-              aria-label="Настройки"
+              aria-label={t("app.settings")}
               onClick={() => setSettingsOpen(true)}
             >
               <svg viewBox="0 0 24 24">
@@ -122,7 +128,7 @@ export default function App() {
         <main className="content">
           {error && (
             <p className="banner" role="alert">
-              Не удалось прочитать окружение: {error}
+              {t("app.environmentError", { error })}
             </p>
           )}
           {warnings.map((warning) => (

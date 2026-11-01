@@ -11,6 +11,7 @@ const settings = {
   videoSubdir: "video",
   concurrency: 2,
   theme: "dark",
+  language: "ru",
   scanDepth: 3,
   autoscan: true,
   embedThumbnail: true,

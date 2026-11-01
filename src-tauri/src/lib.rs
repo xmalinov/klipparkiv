@@ -1,6 +1,7 @@
 mod args;
 mod binaries;
 mod commands;
+mod i18n;
 mod library;
 mod metadata;
 mod paths;
@@ -16,6 +17,23 @@ use std::sync::Arc;
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
+
+/// Handles to the tray menu items so they can follow the UI language.
+pub struct TrayMenuItems {
+    pub open: MenuItem<tauri::Wry>,
+    pub pause: MenuItem<tauri::Wry>,
+    pub quit: MenuItem<tauri::Wry>,
+}
+
+pub fn refresh_tray_language(app: &tauri::AppHandle) {
+    if let Some(items) = app.try_state::<TrayMenuItems>() {
+        let _ = items.open.set_text(i18n::t("Открыть", "Open"));
+        let _ = items
+            .pause
+            .set_text(i18n::t("Пауза очереди", "Pause queue"));
+        let _ = items.quit.set_text(i18n::t("Выход", "Quit"));
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,10 +91,23 @@ pub fn run() {
         .manage(settings_store)
         .manage(tasks)
         .setup(|app| {
-            let open = MenuItem::with_id(app, "open", "Открыть", true, None::<&str>)?;
-            let pause = MenuItem::with_id(app, "pause", "Пауза очереди", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
+            let open =
+                MenuItem::with_id(app, "open", i18n::t("Открыть", "Open"), true, None::<&str>)?;
+            let pause = MenuItem::with_id(
+                app,
+                "pause",
+                i18n::t("Пауза очереди", "Pause queue"),
+                true,
+                None::<&str>,
+            )?;
+            let quit =
+                MenuItem::with_id(app, "quit", i18n::t("Выход", "Quit"), true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &pause, &quit])?;
+            let _ = app.manage(TrayMenuItems {
+                open: open.clone(),
+                pause: pause.clone(),
+                quit: quit.clone(),
+            });
 
             if let Some(icon) = app.default_window_icon() {
                 TrayIconBuilder::with_id("main")

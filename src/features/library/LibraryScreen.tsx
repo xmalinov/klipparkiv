@@ -15,14 +15,24 @@ import {
   type SortKey,
 } from "../../api/library";
 import { formatDuration } from "../../api/tasks";
+import { useI18n } from "../../i18n";
 
-const SORTS: { value: SortKey; label: string }[] = [
-  { value: "dateDesc", label: "Сначала новые" },
-  { value: "dateAsc", label: "Сначала старые" },
-  { value: "title", label: "По названию" },
-  { value: "duration", label: "По длительности" },
-  { value: "size", label: "По размеру" },
-  { value: "channel", label: "По каналу" },
+const SORTS: {
+  value: SortKey;
+  labelKey:
+    | "library.sort.dateDesc"
+    | "library.sort.dateAsc"
+    | "library.sort.title"
+    | "library.sort.duration"
+    | "library.sort.size"
+    | "library.sort.channel";
+}[] = [
+  { value: "dateDesc", labelKey: "library.sort.dateDesc" },
+  { value: "dateAsc", labelKey: "library.sort.dateAsc" },
+  { value: "title", labelKey: "library.sort.title" },
+  { value: "duration", labelKey: "library.sort.duration" },
+  { value: "size", labelKey: "library.sort.size" },
+  { value: "channel", labelKey: "library.sort.channel" },
 ];
 
 function Cover({ item }: { item: LibraryItem }) {
@@ -67,10 +77,10 @@ function Cover({ item }: { item: LibraryItem }) {
   );
 }
 
-function metaLine(item: LibraryItem): string {
+function metaLine(item: LibraryItem, language: "ru" | "en"): string {
   return [
-    formatBytes(item.sizeBytes),
-    formatItemDate(item.mtime),
+    formatBytes(item.sizeBytes, language),
+    formatItemDate(item.mtime, language),
     formatResolution(item.width, item.height),
   ]
     .filter(Boolean)
@@ -78,6 +88,7 @@ function metaLine(item: LibraryItem): string {
 }
 
 export default function LibraryScreen() {
+  const { language, t } = useI18n();
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<MediaKind | undefined>(undefined);
   const [sort, setSort] = useState<SortKey>("dateDesc");
@@ -153,7 +164,7 @@ export default function LibraryScreen() {
     try {
       await openPath(item.path);
     } catch (cause) {
-      setError(`Не удалось открыть файл: ${String(cause)}`);
+      setError(t("library.openError", { error: String(cause) }));
     }
   }
 
@@ -191,16 +202,16 @@ export default function LibraryScreen() {
             ref={searchRef}
             value={search}
             onChange={(event) => setSearch(event.currentTarget.value)}
-            placeholder="Поиск по названию или каналу…"
-            aria-label="Поиск в библиотеке"
+            placeholder={t("library.searchPlaceholder")}
+            aria-label={t("library.searchLabel")}
           />
         </div>
 
-        <div className="tabs lib-tabs" role="tablist" aria-label="Тип медиа">
+        <div className="tabs lib-tabs" role="tablist" aria-label={t("library.kindGroup")}>
           {[
-            { id: undefined, label: "Все" },
-            { id: "audio" as MediaKind, label: "Аудио" },
-            { id: "video" as MediaKind, label: "Видео" },
+            { id: undefined, label: t("library.all") },
+            { id: "audio" as MediaKind, label: t("common.audio") },
+            { id: "video" as MediaKind, label: t("common.video") },
           ].map((tab) => (
             <button
               key={tab.label}
@@ -217,24 +228,24 @@ export default function LibraryScreen() {
 
         <div className="lib-tools">
           <label className="sort">
-            <span className="sr-only">Сортировка</span>
+            <span className="sr-only">{t("library.sortLabel")}</span>
             <select
               value={sort}
               onChange={(event) => setSort(event.currentTarget.value as SortKey)}
             >
               {SORTS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.labelKey)}
                 </option>
               ))}
             </select>
           </label>
 
-          <div className="view-toggle" role="group" aria-label="Вид">
+          <div className="view-toggle" role="group" aria-label={t("library.viewLabel")}>
             <button
               type="button"
               aria-pressed={view === "grid"}
-              aria-label="Плитка"
+              aria-label={t("library.grid")}
               className={view === "grid" ? "icon-btn on" : "icon-btn"}
               onClick={() => setView("grid")}
             >
@@ -248,7 +259,7 @@ export default function LibraryScreen() {
             <button
               type="button"
               aria-pressed={view === "list"}
-              aria-label="Список"
+              aria-label={t("library.list")}
               className={view === "list" ? "icon-btn on" : "icon-btn"}
               onClick={() => setView("list")}
             >
@@ -261,7 +272,7 @@ export default function LibraryScreen() {
           <button
             type="button"
             className={scanning ? "icon-btn scan spinning" : "icon-btn scan"}
-            aria-label="Сканировать сейчас"
+            aria-label={t("library.scan")}
             onClick={() => refresh(true)}
             disabled={scanning}
           >
@@ -271,7 +282,9 @@ export default function LibraryScreen() {
             </svg>
           </button>
 
-          <span className="counter">{formatFileCount(page.total)}</span>
+          <span className="counter">
+            {formatFileCount(page.total, language)}
+          </span>
         </div>
       </div>
 
@@ -287,10 +300,10 @@ export default function LibraryScreen() {
             <rect x="3" y="4" width="18" height="16" rx="2" />
             <path d="M8 4v16" />
           </svg>
-          <p>Здесь появятся скачанные файлы</p>
+          <p>{t("library.empty")}</p>
         </div>
       ) : empty ? (
-        <p className="queue-empty">Ничего не найдено. Измените запрос или фильтр.</p>
+        <p className="queue-empty">{t("library.noResults")}</p>
       ) : view === "grid" ? (
         <div className="lib-grid">
           {page.items.map((item) => (
@@ -318,21 +331,24 @@ export default function LibraryScreen() {
                 {item.title}
               </div>
               <div className="media-sub">
-                {item.channel ?? (item.kind === "audio" ? "Аудио" : "Видео")}
+                {item.channel ??
+                  (item.kind === "audio"
+                    ? t("common.audio")
+                    : t("common.video"))}
               </div>
-              <div className="media-meta">{metaLine(item)}</div>
+              <div className="media-meta">{metaLine(item, language)}</div>
             </div>
           ))}
         </div>
       ) : (
         <div className="lib-list">
           <div className="list-head">
-            <span>Название</span>
-            <span>Тип</span>
-            <span>Длительность</span>
-            <span>Размер</span>
-            <span>Дата</span>
-            <span>Качество</span>
+            <span>{t("library.colTitle")}</span>
+            <span>{t("library.colType")}</span>
+            <span>{t("library.colDuration")}</span>
+            <span>{t("library.colSize")}</span>
+            <span>{t("library.colDate")}</span>
+            <span>{t("library.colQuality")}</span>
           </div>
           {page.items.map((item) => (
             <div
@@ -352,10 +368,12 @@ export default function LibraryScreen() {
               <span className="list-title" title={item.title}>
                 {item.title}
               </span>
-              <span>{item.kind === "audio" ? "Аудио" : "Видео"}</span>
+              <span>
+                {item.kind === "audio" ? t("common.audio") : t("common.video")}
+              </span>
               <span>{formatDuration(item.durationSecs)}</span>
-              <span>{formatBytes(item.sizeBytes)}</span>
-              <span>{formatItemDate(item.mtime)}</span>
+              <span>{formatBytes(item.sizeBytes, language)}</span>
+              <span>{formatItemDate(item.mtime, language)}</span>
               <span>{formatResolution(item.width, item.height) || "—"}</span>
             </div>
           ))}
@@ -369,26 +387,29 @@ export default function LibraryScreen() {
           role="menu"
         >
           <button type="button" role="menuitem" onClick={() => play(menu.item)}>
-            Воспроизвести
+            {t("library.menu.play")}
           </button>
           <button type="button" role="menuitem" onClick={() => reveal(menu.item)}>
-            Показать в проводнике
+            {t("library.menu.reveal")}
           </button>
           <button
             type="button"
             role="menuitem"
             onClick={() => navigator.clipboard?.writeText(menu.item.path)}
           >
-            Копировать путь
+            {t("library.menu.copyPath")}
           </button>
           <button type="button" role="menuitem" onClick={() => remove(menu.item)}>
-            Убрать из библиотеки
+            {t("library.menu.remove")}
           </button>
         </div>
       )}
 
       <footer className="lib-footer">
-        {scanning ? "Сканирование…" : `Файлов: ${page.total}`}      </footer>
+        {scanning
+          ? t("library.scanning")
+          : t("library.filesCount", { count: page.total })}
+      </footer>
     </div>
   );
 }

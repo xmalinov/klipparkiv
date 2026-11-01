@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::WalkDir;
 
+use crate::i18n;
 use crate::paths::PortablePaths;
 use crate::settings::SettingsStore;
 
@@ -148,7 +149,7 @@ fn display_title(stem: &str) -> String {
                 .chars()
                 .all(|c| c.is_ascii_digit() || c == '-' || c == ':');
         if looks_like_id && looks_like_range {
-            return format!("Клип {range}");
+            return format!("{} {range}", i18n::t("Клип", "Clip"));
         }
     }
     stem.to_string()
@@ -283,8 +284,8 @@ pub fn scan_dir(
         let stem = path
             .file_stem()
             .and_then(|stem| stem.to_str())
-            .unwrap_or("Без названия")
-            .to_string();
+            .map(str::to_owned)
+            .unwrap_or_else(|| i18n::t("Без названия", "Untitled"));
         let title = display_title(&stem);
         let candidate = thumbs.join(format!("{}.jpg", thumb_id(&stem)));
         let thumb_path = candidate
@@ -426,14 +427,20 @@ pub fn query_page(library: &Library, query: &LibraryQuery) -> Result<LibraryPage
 
 /// Reads a cover only from the library cache inside the portable root.
 pub fn resolve_thumb(root: &Path, candidate: &Path) -> Result<PathBuf, String> {
-    let normalized = candidate
-        .strip_prefix(root)
-        .map_err(|_| "обложка вне папки приложения".to_string())?;
+    let normalized = candidate.strip_prefix(root).map_err(|_| {
+        i18n::t(
+            "обложка вне папки приложения",
+            "the cover is outside the app folder",
+        )
+    })?;
     if !normalized.starts_with("data") || !normalized.to_string_lossy().contains("thumbs") {
-        return Err("обложка вне кэша".into());
+        return Err(i18n::t(
+            "обложка вне кэша",
+            "the cover is outside the cache",
+        ));
     }
     if !candidate.is_file() {
-        return Err("обложка не найдена".into());
+        return Err(i18n::t("обложка не найдена", "the cover was not found"));
     }
     Ok(candidate.to_path_buf())
 }

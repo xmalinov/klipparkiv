@@ -135,15 +135,23 @@ export function formatPercent(percent: number): string {
   return `${Math.round(percent)}%`;
 }
 
-export function formatSpeed(bytesPerSecond: number | null): string {
+export function formatSpeed(
+  bytesPerSecond: number | null,
+  language: "ru" | "en" = "ru",
+): string {
   if (bytesPerSecond === null || !Number.isFinite(bytesPerSecond)) return "—";
+  const separator = language === "ru" ? "," : ".";
   if (bytesPerSecond >= 1024 * 1024) {
-    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1).replace(".", ",")} МБ/с`;
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1).replace(".", separator)} ${
+      language === "ru" ? "МБ/с" : "MB/s"
+    }`;
   }
   if (bytesPerSecond >= 1024) {
-    return `${Math.round(bytesPerSecond / 1024)} КБ/с`;
+    return `${Math.round(bytesPerSecond / 1024)} ${
+      language === "ru" ? "КБ/с" : "KB/s"
+    }`;
   }
-  return `${Math.round(bytesPerSecond)} Б/с`;
+  return `${Math.round(bytesPerSecond)} ${language === "ru" ? "Б/с" : "B/s"}`;
 }
 
 export function formatEta(seconds: number | null): string {
@@ -166,13 +174,24 @@ export function formatDuration(seconds: number | null): string {
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
 }
 
-export function formatViews(count: number | null): string {
+export function formatViews(
+  count: number | null,
+  language: "ru" | "en" = "ru",
+): string {
   if (count === null || !Number.isFinite(count)) return "";
+  const separator = language === "ru" ? "," : ".";
+  const decimal = (value: number) => value.toFixed(1).replace(".", separator);
+  if (language === "en") {
+    if (count >= 1_000_000_000) return `${decimal(count / 1_000_000_000)}B views`;
+    if (count >= 1_000_000) return `${decimal(count / 1_000_000)}M views`;
+    if (count >= 1_000) return `${Math.round(count / 1_000)}K views`;
+    return `${count} ${count === 1 ? "view" : "views"}`;
+  }
   if (count >= 1_000_000_000) {
-    return `${(count / 1_000_000_000).toFixed(1).replace(".", ",")} млрд просмотров`;
+    return `${decimal(count / 1_000_000_000)} млрд просмотров`;
   }
   if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1).replace(".", ",")} млн просмотров`;
+    return `${decimal(count / 1_000_000)} млн просмотров`;
   }
   if (count >= 1_000) {
     return `${Math.round(count / 1_000)} тыс. просмотров`;
@@ -180,22 +199,47 @@ export function formatViews(count: number | null): string {
   return `${count} просмотров`;
 }
 
-export function formatUploadDate(raw: string | null): string {
+export function formatUploadDate(
+  raw: string | null,
+  language: "ru" | "en" = "ru",
+): string {
   if (!raw || !/^\d{8}$/.test(raw)) return raw ?? "";
-  return `${raw.slice(6, 8)}.${raw.slice(4, 6)}.${raw.slice(0, 4)}`;
+  const day = raw.slice(6, 8);
+  const month = raw.slice(4, 6);
+  const year = raw.slice(0, 4);
+  return language === "ru"
+    ? `${day}.${month}.${year}`
+    : `${month}/${day}/${year}`;
 }
 
-export function stateLabel(task: TaskSnapshot): string {
+export function stateLabel(
+  task: TaskSnapshot,
+  language: "ru" | "en" = "ru",
+): string {
+  const labels =
+    language === "ru"
+      ? {
+          queued: "В очереди",
+          done: "Готово",
+          failed: "Ошибка",
+          canceled: "Отменено",
+        }
+      : {
+          queued: "Queued",
+          done: "Done",
+          failed: "Error",
+          canceled: "Canceled",
+        };
   switch (task.state) {
     case "queued":
-      return "В очереди";
+      return labels.queued;
     case "running":
       return formatPercent(task.percent);
     case "done":
-      return "Готово";
+      return labels.done;
     case "failed":
-      return "Ошибка";
+      return labels.failed;
     case "canceled":
-      return "Отменено";
+      return labels.canceled;
   }
 }

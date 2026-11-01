@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getSettings } from "../../api/settings";
+import { useI18n, type Translate } from "../../i18n";
 import {
   applyProgress,
   cancelTask,
@@ -23,11 +24,18 @@ import {
   type VideoInfo,
 } from "../../api/tasks";
 
-const MODES: { id: DownloadMode; label: string }[] = [
-  { id: "audio", label: "Аудио" },
-  { id: "video", label: "Видео" },
-  { id: "both", label: "Аудио+Видео" },
-  { id: "clip", label: "Клип" },
+const MODES: {
+  id: DownloadMode;
+  labelKey:
+    | "download.mode.audio"
+    | "download.mode.video"
+    | "download.mode.both"
+    | "download.mode.clip";
+}[] = [
+  { id: "audio", labelKey: "download.mode.audio" },
+  { id: "video", labelKey: "download.mode.video" },
+  { id: "both", labelKey: "download.mode.both" },
+  { id: "clip", labelKey: "download.mode.clip" },
 ];
 
 function modeHint(
@@ -35,28 +43,35 @@ function modeHint(
   quality: string,
   clipKind: "audio" | "video",
   audioKbps: number,
+  t: Translate,
 ): string {
-  const videoQuality = quality === "best" ? "лучшее качество" : `${quality}p`;
+  const videoQuality =
+    quality === "best" ? t("download.bestQuality") : `${quality}p`;
   switch (mode) {
     case "audio":
-      return `MP3 ${audioKbps} kbps · обложка и метаданные внутри файла`;
+      return t("download.hint.audio", { kbps: audioKbps });
     case "video":
-      return `MP4 ${videoQuality} · слияние в один файл`;
+      return t("download.hint.video", { quality: videoQuality });
     case "both":
-      return `MP3 ${audioKbps} kbps + MP4 ${videoQuality} · две задачи, два архива`;
+      return t("download.hint.both", {
+        kbps: audioKbps,
+        quality: videoQuality,
+      });
     case "clip":
       return clipKind === "audio"
-        ? `Фрагмент · MP3 ${audioKbps} kbps`
-        : `Фрагмент · MP4 ${videoQuality}`;
+        ? t("download.hint.clipAudio", { kbps: audioKbps })
+        : t("download.hint.clipVideo", { quality: videoQuality });
   }
 }
 
-function taskLabel(task: TaskSnapshot): string {
-  const base = task.mode === "audio" ? "Аудио" : "Видео";
-  return task.clip ? `${base} · клип` : base;
+function taskLabel(task: TaskSnapshot, t: Translate): string {
+  const base =
+    task.mode === "audio" ? t("download.task.audio") : t("download.task.video");
+  return task.clip ? t("download.task.clip", { base }) : base;
 }
 
 export default function DownloadScreen({ root }: { root?: string }) {
+  const { language, t } = useI18n();
   const [url, setUrl] = useState("");
   const [mode, setMode] = useState<DownloadMode>("audio");
   const [clipKind, setClipKind] = useState<"audio" | "video">("video");
@@ -154,7 +169,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
   const targetDir =
     outDir ??
     (effectiveMode === "both"
-      ? `${root ?? ""} · ${audioSubdir}\\ и ${videoSubdir}\\`
+      ? `${root ?? ""} · ${audioSubdir}\\ ${language === "ru" ? "и" : "and"} ${videoSubdir}\\`
       : `${root ?? ""}\\${defaultSubdir}`);
   const outsideRoot =
     outDir !== null && root !== undefined && !outDir.toLowerCase().startsWith(root.toLowerCase());
@@ -199,7 +214,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
       const text = await navigator.clipboard.readText();
       if (text.trim()) setUrl(text.trim());
     } catch {
-      setError("Буфер обмена недоступен — вставьте ссылку через Ctrl+V");
+      setError(t("download.clipboardError"));
     }
   }
 
@@ -216,7 +231,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
     try {
       const selected = await open({
         multiple: false,
-        filters: [{ name: "Списки ссылок", extensions: ["txt"] }],
+        filters: [{ name: t("download.batchFilter"), extensions: ["txt"] }],
       });
       if (!selected || Array.isArray(selected)) return;
       const created = await enqueueBatch({
@@ -243,13 +258,13 @@ export default function DownloadScreen({ root }: { root?: string }) {
           onKeyDown={(event) => {
             if (event.key === "Enter") submit();
           }}
-          placeholder="Вставьте ссылку на YouTube или введите её вручную"
-          aria-label="Ссылка на видео"
+          placeholder={t("download.placeholder")}
+          aria-label={t("download.urlLabel")}
           spellCheck={false}
           autoFocus
         />
         <button type="button" className="btn btn-ghost" onClick={paste}>
-          Вставить
+          {t("download.paste")}
         </button>
       </div>
 
@@ -260,7 +275,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
       )}
 
       <div className="modes">
-        <div className="tabs" role="tablist" aria-label="Режим загрузки">
+        <div className="tabs" role="tablist" aria-label={t("download.modeGroup")}>
           {MODES.map((item) => (
             <button
               key={item.id}
@@ -270,7 +285,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
               className={mode === item.id ? "tab active" : "tab"}
               onClick={() => setMode(item.id)}
             >
-              {item.label}
+              {t(item.labelKey)}
             </button>
           ))}
         </div>
@@ -279,9 +294,9 @@ export default function DownloadScreen({ root }: { root?: string }) {
           <div className="quality-group">
             {wantsAudio && (
               <label className="quality">
-                <span>Аудио</span>
+                <span>{t("common.audio")}</span>
                 <select
-                  aria-label="Качество аудио"
+                  aria-label={t("download.audioQuality")}
                   value={audioKbps}
                   onChange={(event) => setAudioKbps(Number(event.currentTarget.value))}
                 >
@@ -294,9 +309,9 @@ export default function DownloadScreen({ root }: { root?: string }) {
             )}
             {wantsVideo && (
               <label className="quality">
-                <span>Видео</span>
+                <span>{t("common.video")}</span>
                 <select
-                  aria-label="Качество видео"
+                  aria-label={t("download.videoQuality")}
                   value={quality}
                   onChange={(event) => setQuality(event.currentTarget.value)}
                 >
@@ -305,7 +320,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
                   <option value="1080">1080p</option>
                   <option value="720">720p</option>
                   <option value="480">480p</option>
-                  <option value="best">Лучшее</option>
+                  <option value="best">{t("download.quality.best")}</option>
                 </select>
               </label>
             )}
@@ -314,57 +329,59 @@ export default function DownloadScreen({ root }: { root?: string }) {
       </div>
 
       <div className="hint-row">
-        <p className="hint">{modeHint(mode, quality, clipKind, audioKbps)}</p>
+        <p className="hint">
+          {modeHint(mode, quality, clipKind, audioKbps, t)}
+        </p>
         <button type="button" className="link-btn" onClick={pickBatch}>
-          Из файла со ссылками…
+          {t("download.batch")}
         </button>
       </div>
 
       {mode === "clip" && (
         <div className="clip-row">
-          <div className="clip-kind" role="group" aria-label="Тип клипа">
+          <div className="clip-kind" role="group" aria-label={t("download.clipKind")}>
             <button
               type="button"
               className={clipKind === "audio" ? "chip active" : "chip"}
               onClick={() => setClipKind("audio")}
             >
-              Аудио
+              {t("common.audio")}
             </button>
             <button
               type="button"
               className={clipKind === "video" ? "chip active" : "chip"}
               onClick={() => setClipKind("video")}
             >
-              Видео
+              {t("common.video")}
             </button>
           </div>
           <label>
-            Начало
+            {t("download.clipStart")}
             <input
               className="field clip"
               value={clipStart}
               onChange={(event) => setClipStart(event.currentTarget.value)}
               placeholder="00:01:30"
               inputMode="numeric"
-              aria-label="Начало клипа"
+              aria-label={t("download.clipStartLabel")}
             />
           </label>
           <span className="clip-sep">—</span>
           <label>
-            Конец
+            {t("download.clipEnd")}
             <input
               className="field clip"
               value={clipEnd}
               onChange={(event) => setClipEnd(event.currentTarget.value)}
               placeholder="00:05:00"
               inputMode="numeric"
-              aria-label="Конец клипа"
+              aria-label={t("download.clipEndLabel")}
             />
           </label>
         </div>
       )}
 
-      {probing && <p className="meta-loading">Проверяем ссылку…</p>}
+      {probing && <p className="meta-loading">{t("download.probing")}</p>}
 
       {meta && !probing && (
         <div className="meta">
@@ -385,14 +402,14 @@ export default function DownloadScreen({ root }: { root?: string }) {
             <div className="meta-sub">
               {[
                 meta.channel,
-                formatViews(meta.viewCount),
-                formatUploadDate(meta.uploadDate),
+                formatViews(meta.viewCount, language),
+                formatUploadDate(meta.uploadDate, language),
               ]
                 .filter(Boolean)
                 .join(" · ")}
             </div>
             <div className="meta-formats">
-              {[formatDuration(meta.durationSecs), "обложка в кэше"]
+              {[formatDuration(meta.durationSecs), t("download.coverCached")]
                 .filter(Boolean)
                 .join(" · ")}
             </div>
@@ -408,21 +425,20 @@ export default function DownloadScreen({ root }: { root?: string }) {
 
       <div className="dest">
         <span className="dest-line">
-          Папка: <span className="mono" title={targetDir}>{targetDir}</span>
+          {t("download.folder")}{" "}
+          <span className="mono" title={targetDir}>{targetDir}</span>
         </span>
         <button type="button" className="link-btn" onClick={pickDestination}>
-          Изменить
+          {t("common.change")}
         </button>
         {outDir && (
           <button type="button" className="link-btn" onClick={() => setOutDir(null)}>
-            По умолчанию
+            {t("common.default")}
           </button>
         )}
       </div>
       {outsideRoot && (
-        <p className="hint warning">
-          Папка вне приложения — файл не попадёт в библиотеку
-        </p>
+        <p className="hint warning">{t("download.outsideRoot")}</p>
       )}
 
       <div className="actions">
@@ -432,33 +448,33 @@ export default function DownloadScreen({ root }: { root?: string }) {
           onClick={submit}
           disabled={!canSubmit}
         >
-          Скачать
+          {t("download.submit")}
         </button>
       </div>
 
-      <section className="queue" aria-label="Очередь загрузок">
+      <section className="queue" aria-label={t("download.queueLabel")}>
         <div className="queue-top">
-          <h2>Очередь</h2>
+          <h2>{t("download.queue")}</h2>
           {tasks.length > 0 && <span className="queue-count">{tasks.length}</span>}
           {tasks.length > 0 && (
             <div className="queue-tools">
               <button type="button" className="link-btn" onClick={togglePause}>
-                {queue.paused ? "Продолжить" : "Пауза"}
+                {queue.paused ? t("download.resume") : t("download.pause")}
               </button>
             </div>
           )}
         </div>
 
         {tasks.length === 0 ? (
-          <p className="queue-empty">Здесь появятся загрузки</p>
+          <p className="queue-empty">{t("download.queueEmpty")}</p>
         ) : (
           <div className="qtable">
             <div className="qhead">
               <span />
-              <span>Название</span>
-              <span>Статус</span>
-              <span>Прогресс</span>
-              <span>Скорость</span>
+              <span>{t("download.colName")}</span>
+              <span>{t("download.colStatus")}</span>
+              <span>{t("download.colProgress")}</span>
+              <span>{t("download.colSpeed")}</span>
               <span />
             </div>
             {tasks.map((task) => (
@@ -466,9 +482,9 @@ export default function DownloadScreen({ root }: { root?: string }) {
                 <span className={`qdot ${task.state}`} aria-hidden="true" />
                 <div className="qname">
                   <b title={task.url}>{task.url}</b>
-                  <span>{taskLabel(task)}</span>
+                  <span>{taskLabel(task, t)}</span>
                 </div>
-                <div className="qstatus">{stateLabel(task)}</div>
+                <div className="qstatus">{stateLabel(task, language)}</div>
                 <div className="qprogress">
                   <div className="qbar">
                     <i style={{ width: `${Math.min(100, task.percent)}%` }} />
@@ -476,7 +492,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
                 </div>
                 <div className="qspeed" title={task.error ?? undefined}>
                   {task.state === "running"
-                    ? [formatSpeed(task.speedBps), formatEta(task.etaSecs)]
+                    ? [formatSpeed(task.speedBps, language), formatEta(task.etaSecs)]
                         .filter(Boolean)
                         .join(" · ")
                     : (task.error ?? "—")}
@@ -484,8 +500,12 @@ export default function DownloadScreen({ root }: { root?: string }) {
                 <button
                   type="button"
                   className="icon-btn"
-                  aria-label={`Отменить ${task.url}`}
-                  title={task.state === "running" ? "Отменить" : "Убрать"}
+                  aria-label={t("download.cancelTask", { url: task.url })}
+                  title={
+                    task.state === "running"
+                      ? t("download.cancel")
+                      : t("download.removeTask")
+                  }
                   onClick={() => cancelTask(task.id)}
                 >
                   ×

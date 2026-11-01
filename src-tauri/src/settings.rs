@@ -5,6 +5,8 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -12,6 +14,7 @@ pub struct Settings {
     pub video_subdir: String,
     pub concurrency: usize,
     pub theme: String,
+    pub language: String,
     pub scan_depth: usize,
     pub autoscan: bool,
     pub embed_thumbnail: bool,
@@ -24,6 +27,7 @@ impl Default for Settings {
             video_subdir: "video".into(),
             concurrency: 2,
             theme: "dark".into(),
+            language: "ru".into(),
             scan_depth: 3,
             autoscan: true,
             embed_thumbnail: true,
@@ -36,13 +40,22 @@ impl Settings {
         validate_subdir(&self.audio_subdir)?;
         validate_subdir(&self.video_subdir)?;
         if !(1..=4).contains(&self.concurrency) {
-            return Err("параллелизм должен быть от 1 до 4".into());
+            return Err(i18n::t(
+                "параллелизм должен быть от 1 до 4",
+                "concurrency must be between 1 and 4",
+            ));
         }
         if !(1..=5).contains(&self.scan_depth) {
-            return Err("глубина сканирования должна быть от 1 до 5".into());
+            return Err(i18n::t(
+                "глубина сканирования должна быть от 1 до 5",
+                "scan depth must be between 1 and 5",
+            ));
         }
         if !["dark", "light", "system"].contains(&self.theme.as_str()) {
-            return Err("неизвестная тема".into());
+            return Err(i18n::t("неизвестная тема", "unknown theme"));
+        }
+        if !["ru", "en"].contains(&self.language.as_str()) {
+            return Err(i18n::t("неизвестный язык", "unknown language"));
         }
         Ok(())
     }
@@ -55,8 +68,9 @@ fn validate_subdir(value: &str) -> Result<(), String> {
             .components()
             .all(|component| matches!(component, std::path::Component::Normal(_)));
     if value.trim().is_empty() || !single_component {
-        return Err(format!(
-            "подпапка «{value}» должна быть одним именем внутри корня"
+        return Err(i18n::tf(
+            || format!("подпапка «{value}» должна быть одним именем внутри корня"),
+            || format!("subfolder \"{value}\" must be a single name inside the root"),
         ));
     }
     Ok(())
@@ -74,6 +88,7 @@ impl SettingsStore {
             .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
             .filter(|settings| settings.validate().is_ok())
             .unwrap_or_default();
+        i18n::set_language(&current.language);
         Self {
             path,
             current: Mutex::new(current),
@@ -88,6 +103,7 @@ impl SettingsStore {
         settings.validate()?;
         let bytes = serde_json::to_vec_pretty(&settings).map_err(|error| error.to_string())?;
         write_atomic(&self.path, &bytes).map_err(|error| error.to_string())?;
+        i18n::set_language(&settings.language);
         *self.current.lock().unwrap() = settings.clone();
         Ok(settings)
     }
@@ -167,6 +183,12 @@ mod tests {
             ..Settings::default()
         };
         assert!(neon.validate().is_err());
+
+        let language = Settings {
+            language: "fr".into(),
+            ..Settings::default()
+        };
+        assert!(language.validate().is_err());
     }
 
     #[test]

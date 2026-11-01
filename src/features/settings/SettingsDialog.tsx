@@ -7,14 +7,22 @@ import {
   updateYtdlp,
   type Settings,
 } from "../../api/settings";
+import { useI18n } from "../../i18n";
 
 type Tab = "general" | "library" | "updates" | "about";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "general", label: "Общие" },
-  { id: "library", label: "Библиотека" },
-  { id: "updates", label: "Обновления" },
-  { id: "about", label: "О программе" },
+const TABS: {
+  id: Tab;
+  labelKey:
+    | "settings.tab.general"
+    | "settings.tab.library"
+    | "settings.tab.updates"
+    | "settings.tab.about";
+}[] = [
+  { id: "general", labelKey: "settings.tab.general" },
+  { id: "library", labelKey: "settings.tab.library" },
+  { id: "updates", labelKey: "settings.tab.updates" },
+  { id: "about", labelKey: "settings.tab.about" },
 ];
 
 export default function SettingsDialog({
@@ -26,6 +34,7 @@ export default function SettingsDialog({
   onClose: () => void;
   onSaved: (settings: Settings) => void;
 }) {
+  const { setLanguage, t } = useI18n();
   const [tab, setTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -37,7 +46,12 @@ export default function SettingsDialog({
     let alive = true;
     getSettings()
       .then((value) => {
-        if (alive) setSettings(value);
+        if (alive) {
+          setSettings({
+            ...value,
+            language: value.language === "en" ? "en" : "ru",
+          });
+        }
       })
       .catch((cause: unknown) => {
         if (alive) setError(String(cause));
@@ -66,6 +80,7 @@ export default function SettingsDialog({
     try {
       const saved = await saveSettings(settings);
       applyTheme(saved.theme);
+      setLanguage(saved.language === "en" ? "en" : "ru");
       onSaved(saved);
       onClose();
     } catch (cause) {
@@ -81,7 +96,7 @@ export default function SettingsDialog({
     setError(null);
     try {
       const version = await updateYtdlp();
-      setUpdateNote(`yt-dlp обновлён до ${version}`);
+      setUpdateNote(t("settings.updated", { version }));
     } catch (cause) {
       setError(String(cause));
     } finally {
@@ -95,12 +110,17 @@ export default function SettingsDialog({
         className="dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Настройки"
+        aria-label={t("settings.title")}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="dialog-head">
-          <span>Настройки</span>
-          <button type="button" className="icon-btn" aria-label="Закрыть" onClick={onClose}>
+          <span>{t("settings.title")}</span>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("common.close")}
+            onClick={onClose}
+          >
             ×
           </button>
         </div>
@@ -115,7 +135,7 @@ export default function SettingsDialog({
               className={tab === item.id ? "tab active" : "tab"}
               onClick={() => setTab(item.id)}
             >
-              {item.label}
+              {t(item.labelKey)}
             </button>
           ))}
         </div>
@@ -128,12 +148,12 @@ export default function SettingsDialog({
           )}
 
           {!settings ? (
-            <p className="queue-empty">Загрузка настроек…</p>
+            <p className="queue-empty">{t("settings.loading")}</p>
           ) : tab === "general" ? (
             <>
               <div className="row">
                 <label className="label" htmlFor="audio-subdir">
-                  Подпапка для аудио
+                  {t("settings.audioSubdir")}
                 </label>
                 <input
                   id="audio-subdir"
@@ -144,7 +164,7 @@ export default function SettingsDialog({
               </div>
               <div className="row">
                 <label className="label" htmlFor="video-subdir">
-                  Подпапка для видео
+                  {t("settings.videoSubdir")}
                 </label>
                 <input
                   id="video-subdir"
@@ -155,7 +175,7 @@ export default function SettingsDialog({
               </div>
               <div className="row">
                 <label className="label" htmlFor="concurrency">
-                  Одновременных загрузок
+                  {t("settings.concurrency")}
                 </label>
                 <select
                   id="concurrency"
@@ -171,12 +191,38 @@ export default function SettingsDialog({
                 </select>
               </div>
               <div className="row">
-                <span className="label">Тема</span>
-                <div className="mini-tabs" role="group" aria-label="Тема">
+                <span className="label">{t("settings.language")}</span>
+                <div
+                  className="mini-tabs"
+                  role="group"
+                  aria-label={t("settings.language")}
+                >
                   {[
-                    { id: "system" as const, label: "Системная" },
-                    { id: "dark" as const, label: "Тёмная" },
-                    { id: "light" as const, label: "Светлая" },
+                    { id: "ru" as const, label: t("settings.language.ru") },
+                    { id: "en" as const, label: t("settings.language.en") },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={settings.language === option.id ? "on" : ""}
+                      onClick={() => update("language", option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="row">
+                <span className="label">{t("settings.theme")}</span>
+                <div
+                  className="mini-tabs"
+                  role="group"
+                  aria-label={t("settings.theme")}
+                >
+                  {[
+                    { id: "system" as const, label: t("settings.theme.system") },
+                    { id: "dark" as const, label: t("settings.theme.dark") },
+                    { id: "light" as const, label: t("settings.theme.light") },
                   ].map((option) => (
                     <button
                       key={option.id}
@@ -194,7 +240,7 @@ export default function SettingsDialog({
             <>
               <div className="row">
                 <label className="label" htmlFor="scan-depth">
-                  Глубина сканирования
+                  {t("settings.scanDepth")}
                 </label>
                 <select
                   id="scan-depth"
@@ -211,7 +257,7 @@ export default function SettingsDialog({
               </div>
               <div className="row">
                 <label className="label" htmlFor="autoscan">
-                  Сканировать при открытии
+                  {t("settings.autoscan")}
                 </label>
                 <input
                   id="autoscan"
@@ -225,58 +271,60 @@ export default function SettingsDialog({
             <>
               <div className="row">
                 <span className="label">yt-dlp</span>
-                <span className="muted">{info?.ytdlp ?? "не найден"}</span>
+                <span className="muted">
+                  {info?.ytdlp ?? t("common.notFound")}
+                </span>
               </div>
               <div className="row">
                 <span className="label">ffmpeg</span>
-                <span className="muted">{info?.ffmpeg ?? "не найден"}</span>
+                <span className="muted">
+                  {info?.ffmpeg ?? t("common.notFound")}
+                </span>
               </div>
               <div className="row">
                 <span className="label">ffprobe</span>
-                <span className="muted">{info?.ffprobe ?? "не найден"}</span>
+                <span className="muted">
+                  {info?.ffprobe ?? t("common.notFound")}
+                </span>
               </div>
               <div className="row">
-                <span className="label">Обновление yt-dlp</span>
+                <span className="label">{t("settings.updateYtdlp")}</span>
                 <button
                   type="button"
                   className="btn ghost"
                   onClick={runUpdate}
                   disabled={updating}
                 >
-                  {updating ? "Обновляем…" : "Обновить"}
+                  {updating ? t("settings.updating") : t("settings.update")}
                 </button>
               </div>
               {updateNote && <p className="hint">{updateNote}</p>}
-              <p className="hint">
-                ffmpeg и ffprobe заменяются вручную: положите новые exe в bin\.
-              </p>
+              <p className="hint">{t("settings.ffmpegHint")}</p>
             </>
           ) : (
             <>
               <div className="row">
-                <span className="label">Версия приложения</span>
+                <span className="label">{t("settings.appVersion")}</span>
                 <span className="muted">0.1.0</span>
               </div>
               <div className="row">
-                <span className="label">Папка приложения</span>
+                <span className="label">{t("settings.appFolder")}</span>
                 <span className="mono small-text" title={info?.root}>
                   {info?.root}
                 </span>
               </div>
               <div className="row">
-                <span className="label">Режим</span>
-                <span className="muted">Портативный, без установки</span>
+                <span className="label">{t("settings.mode")}</span>
+                <span className="muted">{t("settings.modePortable")}</span>
               </div>
-              <p className="hint">
-                Настройки и библиотека лежат в data\, ничего не пишется в реестр.
-              </p>
+              <p className="hint">{t("settings.aboutHint")}</p>
             </>
           )}
         </div>
 
         <div className="dialog-foot">
           <button type="button" className="btn ghost" onClick={onClose}>
-            Отмена
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -284,7 +332,7 @@ export default function SettingsDialog({
             onClick={save}
             disabled={!settings || saving}
           >
-            Сохранить
+            {t("common.save")}
           </button>
         </div>
       </div>

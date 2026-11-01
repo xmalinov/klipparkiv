@@ -30,6 +30,7 @@ them in a local library. No installer, no registry, no admin rights.
 - **Download archive** — items you already saved are skipped.
 - **Library** — covers, search, filters, sorting, open in the system player.
 - **Update yt-dlp** from the UI.
+- **Russian and English UI** — switch the language in Settings; the choice is saved.
 - **Portable** — settings and index in `data\`, media in `audio\` and `video\`;
   nothing is written to the registry or `%APPDATA%`.
 
@@ -116,6 +117,7 @@ for setup and checks.
 - **Архив загрузок** — уже сохранённое пропускается.
 - **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в системном плеере.
 - **Обновление yt-dlp** из интерфейса.
+- **Русский и английский интерфейс** — язык переключается в настройках и сохраняется.
 - **Портативность** — настройки и индекс в `data\`, медиа в `audio\` и `video\`;
   реестр и `%APPDATA%` не затрагиваются.
 

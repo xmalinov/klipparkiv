@@ -5,6 +5,7 @@ export interface Settings {
   videoSubdir: string;
   concurrency: number;
   theme: "dark" | "light" | "system";
+  language: "ru" | "en";
   scanDepth: number;
   autoscan: boolean;
   embedThumbnail: boolean;
@@ -15,6 +16,7 @@ export const DEFAULT_SETTINGS: Settings = {
   videoSubdir: "video",
   concurrency: 2,
   theme: "dark",
+  language: "ru",
   scanDepth: 3,
   autoscan: true,
   embedThumbnail: true,

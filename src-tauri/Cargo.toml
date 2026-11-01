@@ -1,6 +1,6 @@
 [package]
 name = "klipparkiv"
-version = "1.0.0"
+version = "1.1.0"
 description = "Portable Windows GUI for yt-dlp: audio, video, clips and a library of downloads"
 authors = ["Klipparkiv contributors"]
 edition = "2024"
