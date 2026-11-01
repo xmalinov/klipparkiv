@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const cargo = readFileSync("src-tauri/Cargo.toml", "utf8");
 const tauri = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+const lock = readFileSync("src-tauri/Cargo.lock", "utf8");
 
 const match = cargo.match(/^\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m);
 if (!match) {
@@ -14,9 +15,22 @@ if (!match) {
   process.exit(1);
 }
 
+// Cargo records the app package in the lockfile as a regular package entry.
+// Reading it directly catches a Cargo.toml bump that was not followed by
+// `cargo update -p klipparkiv`, which CI would otherwise fix silently.
+const appLock = lock
+  .split("[[package]]")
+  .find((block) => /^\s*name = "klipparkiv"\s*$/m.test(block));
+const lockVersion = appLock?.match(/^\s*version = "([^"]+)"/m)?.[1];
+if (!lockVersion) {
+  console.error("cannot find the klipparkiv package in src-tauri/Cargo.lock");
+  process.exit(1);
+}
+
 const versions = {
   "package.json": pkg.version,
   "Cargo.toml": match[1],
+  "Cargo.lock": lockVersion,
   "tauri.conf.json": tauri.version,
 };
 const unique = new Set(Object.values(versions));

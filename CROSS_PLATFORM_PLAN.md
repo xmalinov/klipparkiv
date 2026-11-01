@@ -10,10 +10,12 @@
 
 - `AppPaths` с раздельными `root`/`support` и платформенными путями.
 - macOS ad-hoc подпись, DMG и `.app.tar.gz`.
-- macOS helper замены бандла с backup/rollback.
+- macOS helper с атомарной заменой бандла (`renamex_np(RENAME_SWAP)`),
+  fallback на две переименовки и backup/rollback.
 - `update.json` с `windows-x86_64`, `darwin-x86_64`, `darwin-aarch64`
   и assisted DMG.
 - macOS CI/release jobs, скрипты бинарей, манифеста и версии.
+- Проверка версии учитывает `src-tauri/Cargo.lock`.
 - Кроссплатформенные тесты и Unix process group.
 - Очистка старых `.part`/распаковок, ротация backup и лога.
 - Tray-template иконка macOS.
@@ -21,7 +23,7 @@
   распаковка и проверка подписи архива, launch в изолированном `HOME`.
 - Не проверено: реальный Windows CI после изменений, Apple Silicon,
   App Management TCC, подпись приватным ключом обновлений.
-- Тесты: 82 Rust + 4 helper + 47 frontend, clippy/fmt без ошибок.
+- Тесты: 82 Rust + 5 helper + 47 frontend, clippy/fmt без ошибок.
 
 ---
 
@@ -715,13 +717,17 @@ Helper на macOS:
   - timeout 60 s → ошибка.
 - Замена:
   1. удалить старый backup;
-  2. `fs::rename(target, backup)`;
-  3. `fs::rename(source, target)`;
+  2. атомарно обменять `target` и `source` через
+     `renamex_np(RENAME_SWAP)`;
+  3. если ФС не поддерживает swap — `fs::rename(target, backup)`,
+     `fs::rename(source, target)` с восстановлением при ошибке;
   4. если `EXDEV` — `ditto` (или рекурсивное копирование) + удаление source;
-  5. снять `com.apple.quarantine` с нового `.app` (после проверки minisign);
-  6. `open -n target`;
-  7. подождать 5 с и проверить процесс (`pgrep -f "<target>/Contents/MacOS/klipparkiv"`);
-  8. если не запустился — restore backup и `open -n target`.
+  5. сохранить старый бандл (после swap он лежит в `source`) в `backup`
+     для rollback;
+  6. снять `com.apple.quarantine` с нового `.app` (после проверки minisign);
+  7. `open -n target`;
+  8. подождать 5 с и проверить процесс (`pgrep -f "<target>/Contents/MacOS/klipparkiv"`);
+  9. если не запустился — атомарно вернуть backup и `open -n target`.
 - Логировать каждый шаг в `support/logs/updater.log`.
 - Backup хранить до следующего успешного обновления.
 

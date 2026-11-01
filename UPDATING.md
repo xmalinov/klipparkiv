@@ -38,18 +38,21 @@ only the existing updater signing key.
 
 ## Version bump
 
-Bump the version in all three files:
+Bump the version in all four files:
 
 - `package.json`
 - `src-tauri/Cargo.toml`
 - `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.lock` (the `klipparkiv` package entry)
 
-Then check:
+Refresh the lockfile after the `Cargo.toml` bump, then check:
 
 ```bash
+cargo check --manifest-path src-tauri/Cargo.toml
 node scripts/check-version.mjs --tag v1.3.0
 ```
 
+The check refuses a mismatch between any of the four files and the tag.
 The release workflow checks the tag against `package.json`.
 
 ## Manual release
@@ -139,10 +142,9 @@ Consequences:
 - The ad-hoc CDHash changes on every build. macOS may reset TCC permissions
   (for example notifications) after an update.
 
-To add a Developer ID later, set `bundle.macOS.signingIdentity` and the Apple
-CI secrets (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
-`APPLE_SIGNING_IDENTITY`, plus notarization credentials). No application code
-changes are needed.
+The ad-hoc signature is an integrity measure, not proof of authorship.
+Developer ID signing and notarization are out of scope for the current release
+line.
 
 ## macOS update installation
 
@@ -153,9 +155,10 @@ Automatic path:
 3. Extract into `~/Library/Application Support/Klipparkiv/update/<version>`.
 4. Verify `CFBundleIdentifier`, version and `codesign --verify --deep --strict`.
 5. Copy `klipparkiv-updater` out of the new bundle.
-6. The helper waits for the app to exit, backs up the current `.app`, moves the
-   new one into place, removes quarantine and relaunches.
-7. On failure the helper restores the backup.
+6. The helper waits for the app to exit, then atomically swaps the current
+   `.app` with the new one (`renamex_np(RENAME_SWAP)`), removes quarantine and
+   relaunches. File systems without swap support fall back to two renames.
+7. On failure the helper swaps the previous bundle back.
 
 Assisted path (used when the app cannot replace itself):
 
@@ -179,7 +182,9 @@ GitHub Actions needs it as repository secrets:
   `.secrets/klipparkiv-updater.key`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — empty for the generated key
 
-Apple secrets are not required for the ad-hoc build.
+macOS builds are ad-hoc signed. Developer ID signing and notarization are not
+used, so a downloaded app still needs the usual Gatekeeper confirmation on first
+launch.
 
 ## Security properties
 
@@ -190,7 +195,9 @@ Apple secrets are not required for the ad-hoc build.
 - Downgrades and versions not newer than the running app are ignored.
 - macOS archives are validated for path traversal and must contain exactly
   `Klipparkiv.app` with the expected bundle id and version.
-- The macOS helper only replaces the app bundle and keeps a backup for rollback.
+- The macOS helper swaps the app bundle atomically (`renamex_np(RENAME_SWAP)`)
+  and keeps the previous bundle for rollback; the install path is never missing
+  during replacement.
 - Windows helper still validates that it only replaces files inside the
   portable root.
 - Updating from a version older than 1.2.0 on Windows requires one manual

@@ -23,9 +23,12 @@ to [Semantic Versioning](https://semver.org/).
   signature.
 - macOS CI and release jobs, DMG packaging, update manifest fragments and
   version checks.
+- The version check now also covers `src-tauri/Cargo.lock`.
 
 #### Fixed
 
+- macOS updates exchange the `.app` bundle atomically, so the install path is
+  never missing during replacement.
 - Cross-platform path handling in tests and thumbnail output templates.
 - Process-tree cancellation on Unix (yt-dlp + ffmpeg).
 
@@ -82,9 +85,12 @@ First public release.
   `~/Movies/Klipparkiv` и `~/Library/Application Support/Klipparkiv`.
 - Управляемая копия yt-dlp на macOS, чтобы `yt-dlp --update` не ломал подпись.
 - macOS CI и release jobs, сборка DMG, фрагменты манифеста и проверка версий.
+- Проверка версии теперь учитывает `src-tauri/Cargo.lock`.
 
 #### Исправлено
 
+- Обновление macOS меняет `.app` атомарно, поэтому путь установки не исчезает
+  во время замены.
 - Кроссплатформенные пути в тестах и шаблонах миниатюр.
 - Отмена дерева процессов на Unix (yt-dlp + ffmpeg).
 

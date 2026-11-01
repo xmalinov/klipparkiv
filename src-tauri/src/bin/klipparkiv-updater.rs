@@ -226,10 +226,13 @@ fn run(args: Args) -> Result<(), String> {
     wait_for_pid(args.wait_pid, Duration::from_secs(60))?;
     log(&args.log, "main process exited; replacing the app bundle");
 
-    if let Err(error) = replace_bundle(&source, &target, &args.backup) {
-        log(&args.log, &format!("replace failed: {error}"));
-        return Err(format!("cannot replace the app bundle: {error}"));
-    }
+    let backup = match replace_bundle(&source, &target, &args.backup) {
+        Ok(backup) => backup,
+        Err(error) => {
+            log(&args.log, &format!("replace failed: {error}"));
+            return Err(format!("cannot replace the app bundle: {error}"));
+        }
+    };
     // The archive was verified with minisign before extraction. Drop any
     // quarantine xattr that could have been inherited during extraction.
     let _ = std::process::Command::new("xattr")
@@ -243,7 +246,7 @@ fn run(args: Args) -> Result<(), String> {
             &args.log,
             "new version did not start; restoring the previous bundle",
         );
-        restore_bundle(&target, &args.backup)?;
+        restore_bundle(&target, &backup)?;
         let _ = relaunch(&target);
         return Err("the new version failed to start; rolled back".to_string());
     }
@@ -306,9 +309,32 @@ fn wait_for_pid(pid: u32, timeout: Duration) -> Result<(), String> {
     }
 }
 
+/// Replaces the installed bundle with `source` and returns the path of the
+/// previous bundle kept for rollback.
+///
+/// APFS can exchange the two directories in one step (`RENAME_SWAP`), so the
+/// install path never disappears and a crash cannot leave it missing. Where the
+/// file system does not support the swap (HFS+, some network volumes), it falls
+/// back to two renames, restoring the original if the second one fails.
 #[cfg(target_os = "macos")]
-fn replace_bundle(source: &Path, target: &Path, backup: &Path) -> Result<(), String> {
+fn replace_bundle(source: &Path, target: &Path, backup: &Path) -> Result<PathBuf, String> {
     let _ = fs::remove_dir_all(backup);
+
+    if swap_paths(source, target).is_ok() {
+        // `source` now holds the previous bundle. Keep it as the rollback copy.
+        // The update itself has succeeded, so failing to move the backup must
+        // not abort it; `source` stays a valid rollback path until the extract
+        // folder is removed after a successful relaunch.
+        if let Some(parent) = backup.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        return match move_dir(source, backup) {
+            Ok(()) => Ok(backup.to_path_buf()),
+            Err(_) => Ok(source.to_path_buf()),
+        };
+    }
+
+    // Two renames with a restore, for file systems without RENAME_SWAP.
     if let Err(error) = move_dir(target, backup) {
         return Err(format!("cannot back up the app bundle: {error}"));
     }
@@ -316,13 +342,45 @@ fn replace_bundle(source: &Path, target: &Path, backup: &Path) -> Result<(), Str
         let _ = move_dir(backup, target);
         return Err(format!("cannot move the new app bundle: {error}"));
     }
-    Ok(())
+    Ok(backup.to_path_buf())
 }
 
 #[cfg(target_os = "macos")]
 fn restore_bundle(target: &Path, backup: &Path) -> Result<(), String> {
+    // Swap back atomically where possible; `backup` then holds the failed new
+    // bundle and is removed.
+    if swap_paths(backup, target).is_ok() {
+        let _ = fs::remove_dir_all(backup);
+        return Ok(());
+    }
     let _ = fs::remove_dir_all(target);
     move_dir(backup, target).map_err(|error| format!("cannot restore the app bundle: {error}"))
+}
+
+/// Exchanges two paths in a single step using `renamex_np(RENAME_SWAP)`.
+///
+/// Available on APFS; other file systems return an error and callers fall back
+/// to two renames.
+#[cfg(target_os = "macos")]
+fn swap_paths(first: &Path, second: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    fn c_path(path: &Path) -> std::io::Result<CString> {
+        CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))
+    }
+
+    let first = c_path(first)?;
+    let second = c_path(second)?;
+    // SAFETY: both pointers are valid NUL-terminated strings that outlive the
+    // call, and renamex_np only reads them.
+    let result = unsafe { libc::renamex_np(first.as_ptr(), second.as_ptr(), libc::RENAME_SWAP) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -549,12 +607,31 @@ mod tests {
         fs::write(target.join("version"), b"old").unwrap();
         fs::write(source.join("version"), b"new").unwrap();
 
-        replace_bundle(&source, &target, &backup).unwrap();
+        let rollback = replace_bundle(&source, &target, &backup).unwrap();
+        assert_eq!(rollback, backup);
         assert_eq!(fs::read_to_string(target.join("version")).unwrap(), "new");
         assert_eq!(fs::read_to_string(backup.join("version")).unwrap(), "old");
+        assert!(!source.exists());
 
         restore_bundle(&target, &backup).unwrap();
         assert_eq!(fs::read_to_string(target.join("version")).unwrap(), "old");
         assert!(!backup.exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn swap_exchanges_two_bundles_atomically() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first.app");
+        let second = temp.path().join("second.app");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::write(first.join("version"), b"first").unwrap();
+        fs::write(second.join("version"), b"second").unwrap();
+
+        swap_paths(&first, &second).unwrap();
+
+        assert_eq!(fs::read_to_string(first.join("version")).unwrap(), "second");
+        assert_eq!(fs::read_to_string(second.join("version")).unwrap(), "first");
     }
 }
