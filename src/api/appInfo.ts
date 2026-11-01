@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 export type AppInfo = {
   root: string;
   writable: boolean;
+  version: string;
+  updateConfigured: boolean;
   ytdlp: string | null;
   ffmpeg: string | null;
   ffprobe: string | null;

@@ -10,6 +10,15 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.2.0] — 2026-11-01
+
+#### Added
+
+- In-app update banner for the application itself.
+- Signed single-exe updates with checksum and version binding.
+- Updates wait for active downloads to finish before restarting.
+- Automatic signature check against the embedded public key in the release workflow.
+
 ### [1.1.0] — 2026-11-01
 
 #### Added
@@ -43,6 +52,15 @@ First public release.
 
 ## Русский
 
+### [1.2.0] — 2026-11-01
+
+#### Добавлено
+
+- Баннер обновления самого приложения в окне.
+- Подписанные обновления одним exe с проверкой контрольной суммы и версии.
+- Обновление ждёт завершения активных загрузок перед перезапуском.
+- Автоматическая проверка подписи по встроенному публичному ключу в release-workflow.
+
 ### [1.1.0] — 2026-11-01
 
 #### Добавлено
@@ -75,5 +93,6 @@ First public release.
 - Уведомление Windows по завершении пакета.
 - Портативная структура: настройки и индекс в `data\`, медиа в `audio\` и `video\`.
 
+[1.2.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.2.0
 [1.1.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.1.0
 [1.0.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.0.0

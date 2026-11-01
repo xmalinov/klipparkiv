@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsDialog from "./SettingsDialog";
 
 const invoke = vi.hoisted(() => vi.fn());
+const listen = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 const settings = {
   audioSubdir: "audio",
@@ -20,6 +22,8 @@ const settings = {
 const info = {
   root: "C:\\apps\\klipparkiv",
   writable: true,
+  version: "1.1.0",
+  updateConfigured: true,
   ytdlp: "2026.10.26",
   ffmpeg: "2026-10-29",
   ffprobe: "2026-10-29",
@@ -28,6 +32,8 @@ const info = {
 describe("SettingsDialog", () => {
   beforeEach(() => {
     invoke.mockReset();
+    listen.mockReset();
+    listen.mockResolvedValue(() => {});
     invoke.mockImplementation((command: string) => {
       if (command === "get_settings") return Promise.resolve(settings);
       if (command === "save_settings")

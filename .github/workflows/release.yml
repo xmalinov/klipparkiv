@@ -49,11 +49,59 @@ jobs:
       - name: Pack portable zip
         run: npm run pack:portable
 
+      - name: Prepare update asset
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+              throw "Tag $env:GITHUB_REF_NAME does not match package.json version $version"
+          }
+          $tag = "v$version"
+          $exe = "release/klipparkiv-$version-win-x64.exe"
+          Copy-Item "dist-portable/klipparkiv.exe" $exe
+          $url = "https://github.com/${{ github.repository }}/releases/download/$tag/klipparkiv-$version-win-x64.exe"
+          "UPDATE_EXE=$exe" >> $env:GITHUB_ENV
+          "UPDATE_URL=$url" >> $env:GITHUB_ENV
+          "UPDATE_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Sign update exe
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+              throw "TAURI_SIGNING_PRIVATE_KEY secret is not configured"
+          }
+          npx tauri signer sign --app-version $env:UPDATE_VERSION "$env:UPDATE_EXE"
+
+      - name: Build update manifest
+        shell: pwsh
+        run: |
+          ./scripts/make-update-manifest.ps1 `
+            -Version $env:UPDATE_VERSION `
+            -Exe $env:UPDATE_EXE `
+            -Signature "$env:UPDATE_EXE.sig" `
+            -Url $env:UPDATE_URL `
+            -Out "release/update.json"
+
+      - name: Verify update signature against the embedded key
+        shell: pwsh
+        run: |
+          $env:UPDATE_VERIFY_FILE = $env:UPDATE_EXE
+          $env:UPDATE_VERIFY_SIG = "$env:UPDATE_EXE.sig"
+          $env:UPDATE_VERIFY_VERSION = $env:UPDATE_VERSION
+          cargo test --manifest-path src-tauri/Cargo.toml --lib updater::tests::verifies_the_release_artifact_when_configured
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: klipparkiv-win-x64
-          path: release/*.zip
+          path: |
+            release/*.zip
+            release/*.exe
+            release/*.sig
+            release/update.json
           if-no-files-found: error
 
       - name: Create draft release
@@ -62,4 +110,8 @@ jobs:
         with:
           draft: true
           generate_release_notes: true
-          files: release/*.zip
+          files: |
+            release/*.zip
+            release/*.exe
+            release/*.sig
+            release/update.json

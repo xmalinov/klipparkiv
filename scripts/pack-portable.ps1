@@ -5,11 +5,15 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $root "src-tauri\target\release\klipparkiv.exe"
+$helper = Join-Path $root "src-tauri\target\release\klipparkiv-updater.exe"
 $bin = Join-Path $root "bin"
 $out = Join-Path $root $OutDir
 
 if (-not (Test-Path $exe)) {
     throw "Release exe not found: $exe. Run 'npm run build:portable' first."
+}
+if (-not (Test-Path $helper)) {
+    throw "Updater helper not found: $helper. Run 'npm run build:portable' first."
 }
 if (-not (Test-Path $bin)) {
     throw "bin\ not found: $bin"
@@ -19,6 +23,7 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Path $out | Out-Null
 
 Copy-Item $exe (Join-Path $out "klipparkiv.exe")
+Copy-Item $helper (Join-Path $out "klipparkiv-updater.exe")
 Copy-Item $bin (Join-Path $out "bin") -Recurse
 Copy-Item (Join-Path $root "README.txt") (Join-Path $out "README.txt")
 
@@ -34,7 +39,14 @@ $release = Join-Path $root "release"
 New-Item -ItemType Directory -Path $release -Force | Out-Null
 $zip = Join-Path $release ("klipparkiv-{0}-win-x64.zip" -f $version)
 if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Join-Path $out "*") -DestinationPath $zip -CompressionLevel Optimal
+$tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+if ($tar) {
+    # Compress-Archive occasionally fails on large files held by antivirus.
+    & $tar.Source -a -c -f $zip -C $out *
+    if ($LASTEXITCODE -ne 0) { throw "tar failed with exit code $LASTEXITCODE" }
+} else {
+    Compress-Archive -Path (Join-Path $out "*") -DestinationPath $zip -CompressionLevel Optimal
+}
 
 $zipSize = (Get-Item $zip).Length / 1MB
 Write-Host ("Archive: {0} ({1:N0} MB)" -f $zip, $zipSize)

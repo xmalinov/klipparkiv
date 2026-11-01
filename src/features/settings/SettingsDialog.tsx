@@ -7,6 +7,15 @@ import {
   updateYtdlp,
   type Settings,
 } from "../../api/settings";
+import {
+  cancelPendingUpdate,
+  checkAppUpdate,
+  downloadAppUpdate,
+  getUpdateStatus,
+  installAppUpdate,
+  subscribeUpdate,
+  type UpdateStatus,
+} from "../../api/updates";
 import { useI18n } from "../../i18n";
 
 type Tab = "general" | "library" | "updates" | "about";
@@ -41,6 +50,29 @@ export default function SettingsDialog({
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const [appUpdate, setAppUpdate] = useState<UpdateStatus | null>(null);
+  const [appBusy, setAppBusy] = useState(false);
+  const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    let dispose: (() => void) | undefined;
+    getUpdateStatus()
+      .then((value) => {
+        if (alive && value && typeof value.state === "string") setAppUpdate(value);
+      })
+      .catch(() => {});
+    subscribeUpdate((value) => {
+      if (alive) setAppUpdate(value);
+    }).then((unlisten) => {
+      if (alive) dispose = unlisten;
+      else unlisten();
+    });
+    return () => {
+      alive = false;
+      dispose?.();
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -102,6 +134,79 @@ export default function SettingsDialog({
     } finally {
       setUpdating(false);
     }
+  }
+
+  async function runAppAction(action: () => Promise<UpdateStatus>) {
+    setAppBusy(true);
+    setAppUpdateError(null);
+    try {
+      const next = await action();
+      if (next && typeof next.state === "string") setAppUpdate(next);
+    } catch (cause) {
+      setAppUpdateError(String(cause));
+    } finally {
+      setAppBusy(false);
+    }
+  }
+
+  function appUpdateStatusText(status: UpdateStatus): string {
+    switch (status.state) {
+      case "checking":
+        return t("settings.checkingUpdates");
+      case "current":
+        return t("settings.currentVersion");
+      case "available":
+        return t("settings.updateAvailable", { version: status.version ?? "" });
+      case "downloading":
+        return t("settings.updateDownloading", { percent: Math.round(status.percent) });
+      case "ready":
+        return t("settings.updateReady", { version: status.version ?? "" });
+      case "deferred":
+        return t("settings.updateDeferred");
+      case "installing":
+        return t("settings.updateInstalling");
+      case "error":
+        return status.error ?? "";
+      default:
+        return "";
+    }
+  }
+
+  const appUpdateLabel =
+    appUpdate?.state === "available"
+      ? t("settings.downloadApp")
+      : appUpdate?.state === "ready"
+        ? t("settings.restartApp")
+        : appUpdate?.state === "deferred"
+          ? t("settings.cancelAppUpdate")
+          : appUpdate?.state === "downloading"
+            ? t("settings.downloadingApp")
+            : appUpdate?.state === "installing"
+              ? t("settings.updateInstalling")
+              : appUpdate?.state === "checking"
+                ? t("settings.checkingUpdates")
+                : t("settings.checkUpdates");
+
+  const appUpdateDisabled =
+    appBusy ||
+    appUpdate?.state === "downloading" ||
+    appUpdate?.state === "installing" ||
+    appUpdate?.state === "checking";
+
+  function runAppUpdateButton() {
+    if (!appUpdate || appUpdate.state === "idle" || appUpdate.state === "current") {
+      return runAppAction(() => checkAppUpdate(false));
+    }
+    if (appUpdate.state === "available") {
+      return runAppAction(downloadAppUpdate);
+    }
+    if (appUpdate.state === "ready") {
+      return runAppAction(installAppUpdate);
+    }
+    if (appUpdate.state === "deferred") {
+      return runAppAction(cancelPendingUpdate);
+    }
+    return runAppAction(() => checkAppUpdate(false));
   }
 
   return (
@@ -270,6 +375,30 @@ export default function SettingsDialog({
           ) : tab === "updates" ? (
             <>
               <div className="row">
+                <span className="label">{t("settings.appVersion")}</span>
+                <span className="muted">{info?.version ?? "—"}</span>
+              </div>
+              <div className="row">
+                <span className="label">{t("settings.appUpdate")}</span>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={runAppUpdateButton}
+                  disabled={appUpdateDisabled}
+                >
+                  {appUpdateLabel}
+                </button>
+              </div>
+              {(appUpdateError || (appUpdate && appUpdateStatusText(appUpdate))) && (
+                <p className={appUpdate?.state === "error" ? "hint warning" : "hint"}>
+                  {appUpdateError ?? (appUpdate ? appUpdateStatusText(appUpdate) : "")}
+                </p>
+              )}
+              {info && !info.updateConfigured && (
+                <p className="hint warning">{t("settings.updatesNotConfigured")}</p>
+              )}
+              <p className="hint">{t("settings.appUpdateHint")}</p>
+              <div className="row">
                 <span className="label">yt-dlp</span>
                 <span className="muted">
                   {info?.ytdlp ?? t("common.notFound")}
@@ -305,7 +434,7 @@ export default function SettingsDialog({
             <>
               <div className="row">
                 <span className="label">{t("settings.appVersion")}</span>
-                <span className="muted">0.1.0</span>
+                <span className="muted">{info?.version ?? "—"}</span>
               </div>
               <div className="row">
                 <span className="label">{t("settings.appFolder")}</span>

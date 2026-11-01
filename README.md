@@ -8,9 +8,9 @@ them in a local library. No installer, no registry, no admin rights.
 [![CI](https://github.com/xmalinov/klipparkiv/actions/workflows/ci.yml/badge.svg)](https://github.com/xmalinov/klipparkiv/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-| Download | Library | Settings |
+| Download | Library | Updates |
 |:---:|:---:|:---:|
-| ![Download](assets/screenshots/download.png) | ![Library](assets/screenshots/library.png) | ![Settings](assets/screenshots/settings.png) |
+| ![Download](assets/screenshots/download.png) | ![Library](assets/screenshots/library.png) | ![Updates](assets/screenshots/updates.png) |
 
 ---
 
@@ -29,6 +29,7 @@ them in a local library. No installer, no registry, no admin rights.
 - **Metadata preview** — title, channel, duration, thumbnail, formats.
 - **Download archive** — items you already saved are skipped.
 - **Library** — covers, search, filters, sorting, open in the system player.
+- **App updates** — in-app banner, signed download, restart on your command.
 - **Update yt-dlp** from the UI.
 - **Russian and English UI** — switch the language in Settings; the choice is saved.
 - **Portable** — settings and index in `data\`, media in `audio\` and `video\`;
@@ -68,6 +69,8 @@ bin\yt-dlp.exe
 bin\ffmpeg.exe
 bin\ffprobe.exe
 ```
+
+For the release and update-signing flow see [UPDATING.md](UPDATING.md).
 
 Checks:
 
@@ -116,6 +119,7 @@ for setup and checks.
 - **Предпросмотр** — название, канал, длительность, обложка, форматы.
 - **Архив загрузок** — уже сохранённое пропускается.
 - **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в системном плеере.
+- **Обновления приложения** — баннер в окне, подписанная загрузка, перезапуск по команде.
 - **Обновление yt-dlp** из интерфейса.
 - **Русский и английский интерфейс** — язык переключается в настройках и сохраняется.
 - **Портативность** — настройки и индекс в `data\`, медиа в `audio\` и `video\`;
@@ -155,6 +159,8 @@ bin\yt-dlp.exe
 bin\ffmpeg.exe
 bin\ffprobe.exe
 ```
+
+Процесс релиза и подписи обновлений описан в [UPDATING.md](UPDATING.md).
 
 Проверки:
 

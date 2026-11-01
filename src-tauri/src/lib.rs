@@ -8,6 +8,7 @@ mod paths;
 mod process;
 mod progress;
 mod settings;
+mod updater;
 
 use commands::TaskStore;
 use paths::PortablePaths;
@@ -17,6 +18,7 @@ use std::sync::Arc;
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
+use updater::UpdateStore;
 
 /// Handles to the tray menu items so they can follow the UI language.
 pub struct TrayMenuItems {
@@ -40,6 +42,8 @@ pub fn refresh_tray_language(app: &tauri::AppHandle) {
 struct AppInfo {
     root: String,
     writable: bool,
+    version: String,
+    update_configured: bool,
     ytdlp: Option<String>,
     ffmpeg: Option<String>,
     ffprobe: Option<String>,
@@ -58,6 +62,8 @@ fn app_info(paths: tauri::State<'_, PortablePaths>) -> AppInfo {
     AppInfo {
         root: paths.root().display().to_string(),
         writable,
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        update_configured: updater::is_configured(),
         ytdlp: binaries::read_version(&paths.ytdlp(), "--version")
             .as_deref()
             .and_then(binaries::parse_ytdlp_version),
@@ -90,6 +96,7 @@ pub fn run() {
         .manage(library)
         .manage(settings_store)
         .manage(tasks)
+        .manage(UpdateStore::default())
         .setup(|app| {
             let open =
                 MenuItem::with_id(app, "open", i18n::t("Открыть", "Open"), true, None::<&str>)?;
@@ -130,6 +137,7 @@ pub fn run() {
                     })
                     .build(app)?;
             }
+            updater::schedule_startup_check(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -145,6 +153,11 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::update_ytdlp,
+            updater::get_update_status,
+            updater::check_app_update,
+            updater::download_app_update,
+            updater::install_app_update,
+            updater::cancel_pending_update,
             library::library_query,
             library::library_scan,
             library::library_remove,
@@ -164,6 +177,8 @@ mod tests {
         let info = AppInfo {
             root: paths.root().display().to_string(),
             writable: paths.ensure_layout().is_ok(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            update_configured: updater::is_configured(),
             ytdlp: binaries::read_version(&paths.ytdlp(), "--version")
                 .as_deref()
                 .and_then(binaries::parse_ytdlp_version),

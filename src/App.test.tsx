@@ -11,6 +11,8 @@ vi.mock("@tauri-apps/api/event", () => ({ listen }));
 const info = {
   root: "C:\\apps\\klipparkiv",
   writable: true,
+  version: "1.1.0",
+  updateConfigured: true,
   ytdlp: "2026.10.26",
   ffmpeg: "2026-10-29",
   ffprobe: "2026-10-29",

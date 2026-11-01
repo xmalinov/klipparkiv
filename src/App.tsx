@@ -4,6 +4,7 @@ import { applyTheme, getSettings } from "./api/settings";
 import DownloadScreen from "./features/download/DownloadScreen";
 import LibraryScreen from "./features/library/LibraryScreen";
 import SettingsDialog from "./features/settings/SettingsDialog";
+import UpdateBanner from "./features/updates/UpdateBanner";
 import { useI18n, type Translate } from "./i18n";
 import "./styles/tokens.css";
 import "./App.css";
@@ -126,6 +127,7 @@ export default function App() {
         </header>
 
         <main className="content">
+          <UpdateBanner />
           {error && (
             <p className="banner" role="alert">
               {t("app.environmentError", { error })}

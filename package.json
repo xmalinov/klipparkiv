@@ -1,7 +1,7 @@
 {
   "name": "klipparkiv",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Portable Windows GUI for yt-dlp: audio, video, clips and a library of downloads",
   "license": "MIT",
   "author": "Klipparkiv contributors",
@@ -18,7 +18,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "build:portable": "tauri build --no-bundle",
+    "build:portable": "tauri build --no-bundle && cargo build --release --manifest-path src-tauri/Cargo.toml --bin klipparkiv-updater",
     "pack:portable": "powershell -ExecutionPolicy Bypass -File scripts/pack-portable.ps1",
     "tauri": "tauri"
   },

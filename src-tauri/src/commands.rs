@@ -173,7 +173,7 @@ impl TaskStore {
         });
     }
 
-    fn queue_state(&self) -> QueueState {
+    pub fn queue_state(&self) -> QueueState {
         let inner = self.inner.lock().unwrap();
         QueueState {
             paused: inner.paused,
@@ -186,7 +186,7 @@ impl TaskStore {
         }
     }
 
-    fn set_paused(&self, paused: bool) -> QueueState {
+    pub fn set_paused(&self, paused: bool) -> QueueState {
         {
             let mut inner = self.inner.lock().unwrap();
             inner.paused = paused;
@@ -503,6 +503,10 @@ fn task_finished(app: &AppHandle) {
     app.state::<Arc<TaskStore>>().finish_running();
     emit_queue(app);
     pump(app);
+
+    if crate::updater::maybe_install_when_idle(app) {
+        return;
+    }
 
     let queue = app.state::<Arc<TaskStore>>().queue_state();
     if queue.running == 0 && queue.queued == 0 {
@@ -824,6 +828,7 @@ pub async fn cancel_task(app: AppHandle, id: String) -> Result<(), String> {
             }
             emit_queue(&app);
             pump(&app);
+            crate::updater::maybe_install_when_idle(&app);
         }
     }
     Ok(())

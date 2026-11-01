@@ -1,4 +1,4 @@
-Klipparkiv 1.1 — portable build / портативная сборка
+Klipparkiv 1.2 — portable build / портативная сборка
 ======================================================
 
 English
@@ -11,6 +11,7 @@ How to run
 
 What is inside
   klipparkiv.exe  the application
+  klipparkiv-updater.exe  applies downloaded updates on restart
   bin\            yt-dlp.exe, ffmpeg.exe, ffprobe.exe (do not delete)
   data\           settings, library index, covers, logs
   audio\          default audio folder
@@ -34,6 +35,12 @@ yt-dlp is updated often (YouTube changes). Replace bin\yt-dlp.exe with a fresh
 build from https://github.com/yt-dlp/yt-dlp/releases — settings and the library
 are preserved. You can also update from the app: Settings → Update yt-dlp.
 
+Updating the app
+When a new release is published, a banner appears in the window. Click "Update",
+wait for the download, then "Restart and update". Only the program is replaced:
+data\, audio\ and video\ are preserved. If downloads are running, the update
+waits for them to finish before restarting.
+
 Limitations
 - Windows 10/11 x64 only.
 - FAT32 flash drive: files over 4 GB will not fit, use exFAT/NTFS.
@@ -54,6 +61,7 @@ you own or are allowed to save.
 
 Что внутри
   klipparkiv.exe  приложение
+  klipparkiv-updater.exe  применяет скачанные обновления при перезапуске
   bin\            yt-dlp.exe, ffmpeg.exe, ffprobe.exe (не удалять)
   data\           настройки, индекс библиотеки, обложки, логи
   audio\          аудио по умолчанию
@@ -77,6 +85,12 @@ WebView2
 yt-dlp обновляется часто (YouTube меняется). Замените bin\yt-dlp.exe на свежий
 с https://github.com/yt-dlp/yt-dlp/releases — настройки и библиотека не пострадают.
 Обновить можно и из приложения: «Настройки» → «Обновить yt-dlp».
+
+Обновление приложения
+Когда выходит новая версия, в окне появляется баннер. Нажмите «Обновить»,
+дождитесь загрузки, затем «Перезапустить и обновить». Заменяется только
+программа: data\, audio\ и video\ остаются на месте. Если идут загрузки,
+обновление дождётся их завершения и только потом перезапустит приложение.
 
 Ограничения
 - Только Windows 10/11 x64.
