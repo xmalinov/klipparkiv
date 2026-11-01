@@ -1,11 +1,12 @@
 ﻿import { useCallback, useEffect, useRef, useState } from "react";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   formatBytes,
   formatFileCount,
   formatItemDate,
   formatResolution,
   loadThumb,
+  openMedia,
   queryLibrary,
   removeFromLibrary,
   scanLibrary,
@@ -162,7 +163,7 @@ export default function LibraryScreen() {
 
   async function play(item: LibraryItem) {
     try {
-      await openPath(item.path);
+      await openMedia(item.path);
     } catch (cause) {
       setError(t("library.openError", { error: String(cause) }));
     }

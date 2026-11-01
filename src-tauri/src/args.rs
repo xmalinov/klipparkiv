@@ -31,20 +31,25 @@ impl Quality {
         }
     }
 
+    /// Prefers H.264/AAC inside MP4. yt-dlp would otherwise pick AV1 or VP9,
+    /// which QuickTime on macOS cannot decode even when muxed into MP4, so the
+    /// player shows a black frame with audio only.
     fn format_selector(self) -> String {
         match self.height() {
             Some(height) => format!(
-                "bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]"
+                "bestvideo[height<={height}][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]"
             ),
-            None => "bestvideo+bestaudio/best".to_string(),
+            None => "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best".to_string(),
         }
     }
 
-    /// Clips keep the historical, more permissive selector from the CLI notes.
+    /// Clips keep the historical, more permissive fallbacks from the CLI notes.
     fn clip_selector(self) -> String {
         match self.height() {
-            Some(height) => format!("bestvideo[height<={height}]+bestaudio/best[height<={height}]"),
-            None => "bestvideo+bestaudio/best".to_string(),
+            Some(height) => format!(
+                "bestvideo[height<={height}][vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[height<={height}][vcodec^=avc1]/bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+            ),
+            None => "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]/bestvideo+bestaudio/best".to_string(),
         }
     }
 }
@@ -379,12 +384,10 @@ mod tests {
         let args = strings(args);
 
         assert!(args.contains(&"-f".to_string()));
-        assert!(
-            args.contains(
-                &"bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]"
-                    .to_string()
-            )
-        );
+        assert!(args.contains(
+            &"bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]"
+                .to_string()
+        ));
         assert_eq!(
             args[args.len() - 3..].to_vec(),
             vec![
@@ -424,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn clip_quality_uses_permissive_selector() {
+    fn clip_quality_prefers_h264_and_keeps_fallbacks() {
         let (out, archive, bin) = paths();
         let clip = ClipSpec::new("00:00:00", "00:00:20");
         let args = build(&request(
@@ -438,7 +441,10 @@ mod tests {
         .unwrap();
         let args = strings(args);
 
-        assert!(args.contains(&"bestvideo[height<=1080]+bestaudio/best[height<=1080]".to_string()));
+        assert!(args.contains(
+            &"bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[height<=1080][vcodec^=avc1]/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+                .to_string()
+        ));
     }
 
     #[test]
@@ -531,12 +537,31 @@ mod tests {
             .unwrap(),
         );
 
-        assert!(
-            args.contains(
-                &"bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160][ext=mp4]"
-                    .to_string()
-            )
+        assert!(args.contains(
+            &"bestvideo[height<=2160][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160][ext=mp4]"
+                .to_string()
+        ));
+    }
+
+    #[test]
+    fn best_quality_prefers_h264_for_quicktime() {
+        let (out, archive, bin) = paths();
+        let args = strings(
+            build(&request(
+                Mode::Video,
+                Quality::Best,
+                None,
+                &out,
+                &archive,
+                &bin,
+            ))
+            .unwrap(),
         );
+
+        assert!(args.contains(
+            &"bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                .to_string()
+        ));
     }
 
     #[test]

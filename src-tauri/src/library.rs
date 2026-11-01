@@ -445,6 +445,44 @@ pub fn resolve_thumb(root: &Path, candidate: &Path) -> Result<PathBuf, String> {
     Ok(candidate.to_path_buf())
 }
 
+/// Resolves a downloaded file for the system player.
+///
+/// The path must point to an existing audio or video file inside the app root,
+/// so a corrupted library row cannot open arbitrary files.
+pub fn resolve_media(root: &Path, candidate: &Path) -> Result<PathBuf, String> {
+    let canonical_root = fs::canonicalize(root).map_err(|error| error.to_string())?;
+    let canonical = fs::canonicalize(candidate)
+        .map_err(|_| i18n::t("файл не найден", "the file was not found"))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(i18n::t(
+            "файл вне папки приложения",
+            "the file is outside the app folder",
+        ));
+    }
+    if kind_for(&canonical).is_none() {
+        return Err(i18n::t(
+            "это не аудио и не видео",
+            "this is not an audio or video file",
+        ));
+    }
+    if !canonical.is_file() {
+        return Err(i18n::t("файл не найден", "the file was not found"));
+    }
+    Ok(canonical)
+}
+
+/// Opens a downloaded file with the system default player.
+///
+/// This goes through Rust instead of the opener plugin's `openPath`, because
+/// the plugin command is blocked by the ACL capability while a Rust command
+/// can validate the path against the library root first.
+#[tauri::command]
+pub fn library_open(app: AppHandle, path: String) -> Result<(), String> {
+    let root = app.state::<AppPaths>().root().to_path_buf();
+    let resolved = resolve_media(&root, Path::new(&path))?;
+    tauri_plugin_opener::open_path(&resolved, None::<&str>).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn library_query(
     library: State<'_, Library>,
@@ -702,5 +740,30 @@ mod tests {
         assert!(resolve_thumb(&fixture.root, &thumb).is_ok());
         assert!(resolve_thumb(&fixture.root, &outside).is_err());
         assert!(resolve_thumb(&fixture.root, &fixture.root.join("audio").join("x.jpg")).is_err());
+    }
+
+    #[test]
+    fn media_resolution_stays_inside_root() {
+        let fixture = fixture("mediaguard");
+        let media = fixture.root.join("video").join("clip.mp4");
+        write(&media, b"mp4");
+        let outside = std::env::temp_dir().join("klipparkiv-outside.mp4");
+        write(&outside, b"mp4");
+        let other = fixture.root.join("video").join("notes.txt");
+        write(&other, b"txt");
+
+        assert_eq!(
+            resolve_media(&fixture.root, &media).unwrap(),
+            fs::canonicalize(&media).unwrap()
+        );
+        assert!(resolve_media(&fixture.root, &outside).is_err());
+        assert!(resolve_media(&fixture.root, &other).is_err());
+        assert!(
+            resolve_media(
+                &fixture.root,
+                &fixture.root.join("video").join("missing.mp4")
+            )
+            .is_err()
+        );
     }
 }

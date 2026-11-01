@@ -53,6 +53,10 @@ export function loadThumb(path: string): Promise<string> {
   return invoke<string>("library_thumb", { path });
 }
 
+export function openMedia(path: string): Promise<void> {
+  return invoke<void>("library_open", { path });
+}
+
 export function formatBytes(
   bytes: number,
   language: "ru" | "en" = "ru",

@@ -22,7 +22,8 @@ no admin rights.
 ### Features
 
 - **Audio** — MP3 128–320 kbps with cover art and tags.
-- **Video** — MP4 480p–2160p.
+- **Video** — MP4 H.264/AAC 480p–2160p; plays in QuickTime and other system
+  players (when H.264 is missing, the best available stream is used).
 - **Audio + Video** — two files from one link, kept in separate archives.
 - **Clips** — cut audio or video by timecode, e.g. `00:01:30-00:05:00`.
 - **Batch** — one URL per line in a `.txt`; queue with 1–4 parallel downloads,
@@ -145,7 +146,8 @@ for setup and checks.
 ### Возможности
 
 - **Аудио** — MP3 128–320 кбит/с, с обложкой и тегами.
-- **Видео** — MP4 от 480p до 2160p.
+- **Видео** — MP4 H.264/AAC от 480p до 2160p; открывается в QuickTime и других
+  системных плеерах (если H.264 нет, берётся лучший доступный поток).
 - **Аудио + видео** — два файла по одной ссылке, в разных архивах.
 - **Клипы** — вырезание аудио или видео по таймкоду, например `00:01:30-00:05:00`.
 - **Пакетно** — по одной ссылке в строке `.txt`; очередь на 1–4 параллельные

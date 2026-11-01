@@ -202,6 +202,7 @@ pub fn run() {
             updater::cancel_pending_update,
             library::library_query,
             library::library_scan,
+            library::library_open,
             library::library_remove,
             library::library_thumb
         ])

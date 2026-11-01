@@ -5,11 +5,10 @@ import LibraryScreen from "./LibraryScreen";
 import type { LibraryItem, LibraryPage } from "../../api/library";
 
 const invoke = vi.hoisted(() => vi.fn());
-const openPath = vi.hoisted(() => vi.fn());
 const revealItemInDir = vi.hoisted(() => vi.fn());
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openPath, revealItemInDir }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir }));
 
 const audio: LibraryItem = {
   id: "C:\\root\\audio\\abc - Song.mp3",
@@ -52,7 +51,6 @@ function setup(items: LibraryItem[] = [audio, video]) {
 describe("LibraryScreen", () => {
   beforeEach(() => {
     invoke.mockReset();
-    openPath.mockReset();
     revealItemInDir.mockReset();
   });
 
@@ -120,7 +118,7 @@ describe("LibraryScreen", () => {
 
     await user.dblClick(title);
 
-    expect(openPath).toHaveBeenCalledWith(audio.path);
+    expect(invoke).toHaveBeenCalledWith("library_open", { path: audio.path });
   });
 
   it("shows an empty state", async () => {

@@ -31,6 +31,10 @@ to [Semantic Versioning](https://semver.org/).
   never missing during replacement.
 - Cross-platform path handling in tests and thumbnail output templates.
 - Process-tree cancellation on Unix (yt-dlp + ffmpeg).
+- Opening a library item no longer depends on the opener plugin ACL: the app
+  validates the file against the library root and opens it from Rust.
+- Video downloads prefer H.264/AAC in MP4, so QuickTime plays them instead of
+  showing audio over a black frame (AV1/VP9 are not decoded by QuickTime).
 
 ### [1.2.0] — 2026-11-01
 
@@ -93,6 +97,10 @@ First public release.
   во время замены.
 - Кроссплатформенные пути в тестах и шаблонах миниатюр.
 - Отмена дерева процессов на Unix (yt-dlp + ffmpeg).
+- Открытие файла из библиотеки больше не зависит от ACL плагина opener:
+  приложение проверяет путь внутри корня библиотеки и открывает файл из Rust.
+- Видео скачивается в H.264/AAC (MP4), поэтому QuickTime показывает картинку,
+  а не только звук (AV1/VP9 QuickTime не декодирует).
 
 ### [1.2.0] — 2026-11-01
 
