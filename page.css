@@ -93,7 +93,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.875em; }
 .zip { margin: 0; padding: var(--space-3) var(--space-4); list-style: none; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); }
 .zip li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding-block: var(--space-2); }
 .zip li + li { border-top: 1px solid var(--border); }
-.zip b { font-weight: 400; color: var(--text); }
+.zip b { font-weight: 400; color: var(--text); overflow-wrap: anywhere; }
 .zip span { color: var(--text-muted); font-family: var(--font-ui); font-size: 12px; }
 
 /* ---- footer ---- */
