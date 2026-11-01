@@ -15,10 +15,11 @@ export const ru = {
   "nav.download": "Загрузка",
   "nav.library": "Библиотека",
   "app.portableMode": "портативный режим",
+  "app.installedMode": "установлено",
   "app.settings": "Настройки",
   "app.environmentError": "Не удалось прочитать окружение: {error}",
   "app.notWritable": "Нет прав на запись в папку приложения",
-  "app.missingBinaries": "Не найдены в bin\\: {names}",
+  "app.missingBinaries": "Не найдены в bin: {names}",
 
   "update.available": "Доступно обновление {version}",
   "update.ready": "Обновление {version} готово к установке",
@@ -31,6 +32,8 @@ export const ru = {
   "update.later": "Позже",
   "update.cancelPending": "Отменить обновление",
   "update.retry": "Повторить",
+  "update.manual": "Обновление {version} скачано. Установите вручную.",
+  "update.openDmg": "Открыть DMG",
 
   "common.audio": "Аудио",
   "common.video": "Видео",
@@ -116,7 +119,7 @@ export const ru = {
   "library.colDate": "Дата",
   "library.colQuality": "Качество",
   "library.menu.play": "Воспроизвести",
-  "library.menu.reveal": "Показать в проводнике",
+  "library.menu.reveal": "Показать в папке",
   "library.menu.copyPath": "Копировать путь",
   "library.menu.remove": "Убрать из библиотеки",
   "library.scanning": "Сканирование…",
@@ -167,6 +170,7 @@ export const ru = {
   "settings.appFolder": "Папка приложения",
   "settings.mode": "Режим",
   "settings.modePortable": "Портативный, без установки",
+  "settings.modeInstalled": "Установленное приложение",
   "settings.aboutHint":
     "Настройки и библиотека лежат в data\\, ничего не пишется в реестр.",
 } as const;
@@ -177,10 +181,11 @@ export const en: Record<TranslationKey, string> = {
   "nav.download": "Download",
   "nav.library": "Library",
   "app.portableMode": "portable mode",
+  "app.installedMode": "installed",
   "app.settings": "Settings",
   "app.environmentError": "Failed to read the environment: {error}",
   "app.notWritable": "The app folder is not writable",
-  "app.missingBinaries": "Not found in bin\\: {names}",
+  "app.missingBinaries": "Not found in bin: {names}",
 
   "update.available": "Update {version} is available",
   "update.ready": "Update {version} is ready to install",
@@ -193,6 +198,8 @@ export const en: Record<TranslationKey, string> = {
   "update.later": "Later",
   "update.cancelPending": "Cancel update",
   "update.retry": "Retry",
+  "update.manual": "Update {version} was downloaded. Install it manually.",
+  "update.openDmg": "Open DMG",
 
   "common.audio": "Audio",
   "common.video": "Video",
@@ -278,7 +285,7 @@ export const en: Record<TranslationKey, string> = {
   "library.colDate": "Date",
   "library.colQuality": "Quality",
   "library.menu.play": "Play",
-  "library.menu.reveal": "Show in File Explorer",
+  "library.menu.reveal": "Show in folder",
   "library.menu.copyPath": "Copy path",
   "library.menu.remove": "Remove from library",
   "library.scanning": "Scanning…",
@@ -329,6 +336,7 @@ export const en: Record<TranslationKey, string> = {
   "settings.appFolder": "App folder",
   "settings.mode": "Mode",
   "settings.modePortable": "Portable, no installation",
+  "settings.modeInstalled": "Installed application",
   "settings.aboutHint":
     "Settings and the library live in data\\; nothing is written to the registry.",
 };

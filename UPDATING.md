@@ -1,56 +1,171 @@
 # Klipparkiv updates
 
-The app checks a signed `update.json` from GitHub Releases and replaces only
-`klipparkiv.exe`. Settings, the library, `audio\` and `video\` are never touched.
+The app checks a signed `update.json` from GitHub Releases. Windows replaces
+`klipparkiv.exe`; macOS replaces the whole `Klipparkiv.app` bundle. Settings,
+the library, `audio/` and `video/` are never touched.
 
-The first release that contains the updater is **1.2.0**. There are no older
-public versions, so no migration/manual-update step is needed.
+The first release with the updater is **1.2.0** on Windows. macOS starts at
+**1.3.0**; there is no older macOS version to migrate.
 
 ![Update banner](assets/screenshots/updates.png)
 
 ![Updates tab](assets/screenshots/settings.png)
 
+## Artifacts
+
+| Platform | Installer | Update asset | Manifest key |
+|---|---|---|---|
+| Windows x64 | `klipparkiv-<ver>-win-x64.zip` | `...-win-x64.exe` | `windows-x86_64` |
+| macOS Intel | `klipparkiv-<ver>-mac-x64.dmg` | `...-mac-x64.app.tar.gz` | `darwin-x86_64` |
+| macOS ARM | `klipparkiv-<ver>-mac-arm64.dmg` | `...-mac-arm64.app.tar.gz` | `darwin-aarch64` |
+
+Each update asset has a minisign `.sig` file. macOS artifacts also include a
+DMG for the assisted update path.
+
 ## Release flow
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds, signs and
-verifies the update, then creates a **draft** release. Publish it with
-`gh release edit v<version> --draft=false`.
+Pushing a `v*` tag runs `.github/workflows/release.yml`:
 
-The manual flow below is the fallback for a local release.
+1. `build-windows` builds the portable zip and update exe.
+2. `build-macos` (matrix: `macos-15-intel`, `macos-15`) builds, ad-hoc signs
+   and packs the `.app`, DMG and update archive.
+3. `publish` merges the platform fragments into `update.json` and creates a
+   **draft** release. Publish it with:
+   `gh release edit v<version> --draft=false`.
 
-1. Bump the version in `package.json`, `src-tauri/Cargo.toml` and
-   `src-tauri/tauri.conf.json`. They must match; the release workflow checks the
-   tag against `package.json`.
-2. Build and pack:
+The release workflow does **not** need a Developer ID or notarization. It needs
+only the existing updater signing key.
 
-   ```powershell
-   npm run build:portable
-   npm run pack:portable
-   ```
+## Version bump
 
-3. Create the updater asset and signature:
+Bump the version in all three files:
 
-   ```powershell
-   $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-   Copy-Item dist-portable\klipparkiv.exe "release\klipparkiv-$version-win-x64.exe"
-   npx tauri signer sign -f .secrets\klipparkiv-updater.key `
-     --app-version $version "release\klipparkiv-$version-win-x64.exe"
-   ```
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/tauri.conf.json`
 
-4. Generate the manifest:
+Then check:
 
-   ```powershell
-   ./scripts/make-update-manifest.ps1 `
-     -Version $version `
-     -Exe "release\klipparkiv-$version-win-x64.exe" `
-     -Signature "release\klipparkiv-$version-win-x64.exe.sig" `
-     -Url "https://github.com/xmalinov/klipparkiv/releases/download/v$version/klipparkiv-$version-win-x64.exe" `
-     -Out "release/update.json"
-   ```
+```bash
+node scripts/check-version.mjs --tag v1.3.0
+```
 
-5. Tag `v<version>`, push the tag and publish the draft release. Until the
-   release is published, `releases/latest/download/update.json` still points to
-   the previous version.
+The release workflow checks the tag against `package.json`.
+
+## Manual release
+
+### Windows
+
+```powershell
+npm run build:portable
+npm run pack:portable
+
+$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+Copy-Item dist-portable\klipparkiv.exe "release\klipparkiv-$version-win-x64.exe"
+npx tauri signer sign -f .secrets\klipparkiv-updater.key `
+  --app-version $version "release\klipparkiv-$version-win-x64.exe"
+
+node scripts/make-update-fragment.mjs `
+  --platform windows-x86_64 `
+  --version $version `
+  --file "release\klipparkiv-$version-win-x64.exe" `
+  --sig "release\klipparkiv-$version-win-x64.exe.sig" `
+  --url "https://github.com/xmalinov/klipparkiv/releases/download/v$version/klipparkiv-$version-win-x64.exe" `
+  --out "release\update-windows.json"
+```
+
+### macOS
+
+```bash
+npm ci
+node scripts/fetch-binaries.mjs mac-arm64   # or mac-x64
+npm run build:macos
+VERSION=$(node -p "require('./package.json').version")
+bash scripts/macos/pack.sh "$VERSION" arm64
+
+npx tauri signer sign --app-version "$VERSION" "release/klipparkiv-$VERSION-mac-arm64.dmg"
+npx tauri signer sign --app-version "$VERSION" "release/klipparkiv-$VERSION-mac-arm64.app.tar.gz"
+
+node scripts/make-update-fragment.mjs \
+  --platform darwin-aarch64 \
+  --version "$VERSION" \
+  --file "release/klipparkiv-$VERSION-mac-arm64.app.tar.gz" \
+  --sig "release/klipparkiv-$VERSION-mac-arm64.app.tar.gz.sig" \
+  --url "https://github.com/xmalinov/klipparkiv/releases/download/v$VERSION/klipparkiv-$VERSION-mac-arm64.app.tar.gz" \
+  --manual-file "release/klipparkiv-$VERSION-mac-arm64.dmg" \
+  --manual-sig "release/klipparkiv-$VERSION-mac-arm64.dmg.sig" \
+  --manual-url "https://github.com/xmalinov/klipparkiv/releases/download/v$VERSION/klipparkiv-$VERSION-mac-arm64.dmg" \
+  --out "release/update-macos-arm64.json"
+```
+
+### Merge
+
+```bash
+node scripts/merge-update-manifest.mjs \
+  --out release/update.json \
+  --version "$VERSION" \
+  --require windows-x86_64,darwin-x86_64,darwin-aarch64 \
+  release/update-windows.json \
+  release/update-macos-x64.json \
+  release/update-macos-arm64.json
+```
+
+Upload the artifacts and `update.json` to the draft release. Until the release
+is published, `releases/latest/download/update.json` points to the previous
+version.
+
+## macOS signing without a Developer ID
+
+Developer ID and notarization are not required. The build is ad-hoc signed:
+
+```bash
+bash scripts/macos/sign-app.sh src-tauri/target/release/bundle/macos/Klipparkiv.app
+```
+
+The script signs nested binaries inside-out, then the bundle, then verifies with
+`codesign --verify --deep --strict`. Do not use `spctl` as a success criterion:
+it rejects ad-hoc builds by design.
+
+Consequences:
+
+- On first launch, macOS asks the user to approve the app:
+  - macOS 15+: System Settings → Privacy & Security → Open Anyway;
+  - macOS 14 and older: right-click → Open;
+  - Terminal: `xattr -dr com.apple.quarantine /Applications/Klipparkiv.app`.
+- On Apple Silicon, every Mach-O must be signed. The script signs `yt-dlp`,
+  `ffmpeg`, `ffprobe` and `klipparkiv-updater`.
+- In-app updates are downloaded by the app, so they do not get a quarantine
+  flag and do not need approval again.
+- The ad-hoc CDHash changes on every build. macOS may reset TCC permissions
+  (for example notifications) after an update.
+
+To add a Developer ID later, set `bundle.macOS.signingIdentity` and the Apple
+CI secrets (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY`, plus notarization credentials). No application code
+changes are needed.
+
+## macOS update installation
+
+Automatic path:
+
+1. Download `Klipparkiv.app.tar.gz`.
+2. Verify size, SHA-256 and minisign signature.
+3. Extract into `~/Library/Application Support/Klipparkiv/update/<version>`.
+4. Verify `CFBundleIdentifier`, version and `codesign --verify --deep --strict`.
+5. Copy `klipparkiv-updater` out of the new bundle.
+6. The helper waits for the app to exit, backs up the current `.app`, moves the
+   new one into place, removes quarantine and relaunches.
+7. On failure the helper restores the backup.
+
+Assisted path (used when the app cannot replace itself):
+
+- App Translocation (`/AppTranslocation/` in the path);
+- `/Applications` is not writable;
+- macOS App Management (TCC) blocks bundle replacement;
+- the helper failed to replace the bundle.
+
+The app then downloads the signed DMG, verifies it, opens it and asks the user
+to drag Klipparkiv into Applications. Data is preserved.
 
 ## Signing key
 
@@ -58,22 +173,34 @@ The manual flow below is the fallback for a local release.
 generated into `.secrets/klipparkiv-updater.key` (gitignored). **Back it up.**
 If it is lost, already installed clients cannot verify future updates.
 
-GitHub Actions needs it as a repository secret:
+GitHub Actions needs it as repository secrets:
 
-- `TAURI_SIGNING_PRIVATE_KEY` — the literal contents of
+- `TAURI_SIGNING_PRIVATE_KEY` — literal contents of
   `.secrets/klipparkiv-updater.key`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — empty for the generated key
 
-Local builds without a private key still compile, but cannot produce a valid
-release manifest.
+Apple secrets are not required for the ad-hoc build.
 
 ## Security properties
 
-- The exe is verified with Ed25519/minisign before it is staged.
+- Update assets are verified with Ed25519/minisign before staging.
 - The signature binds the artifact to the version in its trusted comment, so a
-  tampered manifest cannot pair a newer version with an older signed binary.
+  tampered manifest cannot pair a newer version with an older signed archive.
 - SHA-256 is checked as an additional integrity guard.
 - Downgrades and versions not newer than the running app are ignored.
-- The helper validates that it only replaces files inside the portable root.
-- Updating from a version older than the first release with this updater
-  requires one manual download.
+- macOS archives are validated for path traversal and must contain exactly
+  `Klipparkiv.app` with the expected bundle id and version.
+- The macOS helper only replaces the app bundle and keeps a backup for rollback.
+- Windows helper still validates that it only replaces files inside the
+  portable root.
+- Updating from a version older than 1.2.0 on Windows requires one manual
+  download. The first macOS release is 1.3.0, so no migration is needed.
+
+## Testing an update locally
+
+1. Build version N and install it.
+2. Build version N+1 into `release/` and sign the artifacts.
+3. Put a test `update.json` on an HTTPS URL (or use a debug build with
+   `KLIPPEARKIV_UPDATE_URL`).
+4. Check the banner, download, install and rollback paths.
+5. Verify that `data/`, `audio/` and `video/` are untouched.

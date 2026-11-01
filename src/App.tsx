@@ -111,7 +111,7 @@ export default function App() {
         <header className="header">
           <h1>{screen === "download" ? t("nav.download") : t("nav.library")}</h1>
           <div className="header-right">
-            <span>{t("app.portableMode")}</span>
+            <span>{t(info?.installKind === "installed" ? "app.installedMode" : "app.portableMode")}</span>
             <button
               type="button"
               className="icon-btn"

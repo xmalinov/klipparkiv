@@ -5,13 +5,16 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  portable:
+  build-windows:
     runs-on: windows-latest
-
     steps:
       - uses: actions/checkout@v7
 
@@ -29,6 +32,10 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Check version
+        shell: bash
+        run: node scripts/check-version.mjs --tag "$GITHUB_REF_NAME"
+
       - name: Download yt-dlp and FFmpeg into bin\
         shell: pwsh
         run: |
@@ -43,66 +50,178 @@ jobs:
           Copy-Item $ffmpeg.FullName "bin/ffmpeg.exe"
           Copy-Item $ffprobe.FullName "bin/ffprobe.exe"
 
-      - name: Build release exe
+      - name: Build portable release
         run: npm run build:portable
 
       - name: Pack portable zip
         run: npm run pack:portable
 
-      - name: Prepare update asset
-        shell: pwsh
-        run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
-              throw "Tag $env:GITHUB_REF_NAME does not match package.json version $version"
-          }
-          $tag = "v$version"
-          $exe = "release/klipparkiv-$version-win-x64.exe"
-          Copy-Item "dist-portable/klipparkiv.exe" $exe
-          $url = "https://github.com/${{ github.repository }}/releases/download/$tag/klipparkiv-$version-win-x64.exe"
-          "UPDATE_EXE=$exe" >> $env:GITHUB_ENV
-          "UPDATE_URL=$url" >> $env:GITHUB_ENV
-          "UPDATE_VERSION=$version" >> $env:GITHUB_ENV
-
-      - name: Sign update exe
+      - name: Prepare and sign update exe
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+              throw "Tag $env:GITHUB_REF_NAME does not match package.json version $version"
+          }
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
               throw "TAURI_SIGNING_PRIVATE_KEY secret is not configured"
           }
-          npx tauri signer sign --app-version $env:UPDATE_VERSION "$env:UPDATE_EXE"
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $exe = "release/klipparkiv-$version-win-x64.exe"
+          Copy-Item "dist-portable/klipparkiv.exe" $exe
+          npx tauri signer sign --app-version $version $exe
+          node scripts/make-update-fragment.mjs `
+            --platform windows-x86_64 `
+            --version $version `
+            --file $exe `
+            --sig "$exe.sig" `
+            --url "https://github.com/${{ github.repository }}/releases/download/v$version/klipparkiv-$version-win-x64.exe" `
+            --out "release/update-windows.json"
+          "UPDATE_VERIFY_FILE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "UPDATE_VERIFY_SIG=$exe.sig" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "UPDATE_VERIFY_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Build update manifest
+      - name: Verify update signature
         shell: pwsh
         run: |
-          ./scripts/make-update-manifest.ps1 `
-            -Version $env:UPDATE_VERSION `
-            -Exe $env:UPDATE_EXE `
-            -Signature "$env:UPDATE_EXE.sig" `
-            -Url $env:UPDATE_URL `
-            -Out "release/update.json"
-
-      - name: Verify update signature against the embedded key
-        shell: pwsh
-        run: |
-          $env:UPDATE_VERIFY_FILE = $env:UPDATE_EXE
-          $env:UPDATE_VERIFY_SIG = "$env:UPDATE_EXE.sig"
-          $env:UPDATE_VERIFY_VERSION = $env:UPDATE_VERSION
           cargo test --manifest-path src-tauri/Cargo.toml --lib updater::tests::verifies_the_release_artifact_when_configured
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: klipparkiv-win-x64
           path: |
             release/*.zip
             release/*.exe
-            release/*.sig
-            release/update.json
+            release/*.exe.sig
+            release/update-windows.json
           if-no-files-found: error
+
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Check version
+        run: node scripts/check-version.mjs --tag "$GITHUB_REF_NAME"
+
+      - name: Fetch macOS binaries
+        run: node scripts/fetch-binaries.mjs "mac-${{ matrix.arch }}"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build macOS app
+        run: npm run build:macos
+
+      - name: Sign and pack macOS artifacts
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          bash scripts/macos/pack.sh "$VERSION" "${{ matrix.arch }}"
+
+      - name: Sign update artifacts
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PREFIX="release/klipparkiv-$VERSION-mac-${{ matrix.arch }}"
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is not configured" >&2
+            exit 1
+          fi
+          npx tauri signer sign --app-version "$VERSION" "$PREFIX.dmg"
+          npx tauri signer sign --app-version "$VERSION" "$PREFIX.app.tar.gz"
+          PLATFORM="darwin-x86_64"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then PLATFORM="darwin-aarch64"; fi
+          node scripts/make-update-fragment.mjs \
+            --platform "$PLATFORM" \
+            --version "$VERSION" \
+            --file "$PREFIX.app.tar.gz" \
+            --sig "$PREFIX.app.tar.gz.sig" \
+            --url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/klipparkiv-$VERSION-mac-${{ matrix.arch }}.app.tar.gz" \
+            --manual-file "$PREFIX.dmg" \
+            --manual-sig "$PREFIX.dmg.sig" \
+            --manual-url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/klipparkiv-$VERSION-mac-${{ matrix.arch }}.dmg" \
+            --out "release/update-macos-${{ matrix.arch }}.json"
+
+      - name: Verify update signature
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          UPDATE_VERIFY_FILE="release/klipparkiv-$VERSION-mac-${{ matrix.arch }}.app.tar.gz" \
+          UPDATE_VERIFY_SIG="release/klipparkiv-$VERSION-mac-${{ matrix.arch }}.app.tar.gz.sig" \
+          UPDATE_VERIFY_VERSION="$VERSION" \
+          cargo test --manifest-path src-tauri/Cargo.toml --lib updater::tests::verifies_the_release_artifact_when_configured
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: klipparkiv-mac-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.dmg.sig
+            release/*.app.tar.gz
+            release/*.app.tar.gz.sig
+            release/update-macos-${{ matrix.arch }}.json
+          if-no-files-found: error
+
+  publish:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: klipparkiv-*
+          merge-multiple: true
+          path: release
+
+      - name: Check version
+        run: node scripts/check-version.mjs --tag "$GITHUB_REF_NAME"
+
+      - name: Merge update manifest
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          node scripts/merge-update-manifest.mjs \
+            --out release/update.json \
+            --version "$VERSION" \
+            --require windows-x86_64,darwin-x86_64,darwin-aarch64 \
+            release/update-windows.json \
+            release/update-macos-x64.json \
+            release/update-macos-arm64.json
+
+      - name: Show release files
+        run: ls -lh release
 
       - name: Create draft release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -113,5 +232,9 @@ jobs:
           files: |
             release/*.zip
             release/*.exe
-            release/*.sig
+            release/*.exe.sig
+            release/*.dmg
+            release/*.dmg.sig
+            release/*.app.tar.gz
+            release/*.app.tar.gz.sig
             release/update.json

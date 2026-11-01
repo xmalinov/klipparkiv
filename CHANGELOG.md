@@ -10,6 +10,25 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [Unreleased]
+
+#### Added
+
+- macOS build: `.app` in a DMG for Intel and Apple Silicon, ad-hoc signed.
+- In-app macOS updates: signed `.app.tar.gz`, bundle replacement, backup and
+  rollback, with a signed-DMG fallback when automatic replacement is blocked.
+- Platform-specific data layout: Windows stays portable, macOS uses
+  `~/Movies/Klipparkiv` and `~/Library/Application Support/Klipparkiv`.
+- Managed yt-dlp copy on macOS so `yt-dlp --update` does not break the app
+  signature.
+- macOS CI and release jobs, DMG packaging, update manifest fragments and
+  version checks.
+
+#### Fixed
+
+- Cross-platform path handling in tests and thumbnail output templates.
+- Process-tree cancellation on Unix (yt-dlp + ffmpeg).
+
 ### [1.2.0] — 2026-11-01
 
 #### Added
@@ -51,6 +70,23 @@ First public release.
 - Portable layout: settings and index in `data\`, media in `audio\` and `video\`.
 
 ## Русский
+
+### [Unreleased]
+
+#### Добавлено
+
+- Сборка для macOS: `.app` в DMG для Intel и Apple Silicon, ad-hoc подпись.
+- Обновления macOS из приложения: подписанный `.app.tar.gz`, замена бандла,
+  backup и rollback, а также fallback через подписанный DMG.
+- Платформенные пути: Windows остаётся портативным, macOS использует
+  `~/Movies/Klipparkiv` и `~/Library/Application Support/Klipparkiv`.
+- Управляемая копия yt-dlp на macOS, чтобы `yt-dlp --update` не ломал подпись.
+- macOS CI и release jobs, сборка DMG, фрагменты манифеста и проверка версий.
+
+#### Исправлено
+
+- Кроссплатформенные пути в тестах и шаблонах миниатюр.
+- Отмена дерева процессов на Unix (yt-dlp + ffmpeg).
 
 ### [1.2.0] — 2026-11-01
 

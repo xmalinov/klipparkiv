@@ -12,7 +12,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::args::{self, ArgsRequest, ClipSpec, Mode, Quality};
 use crate::i18n;
 use crate::metadata;
-use crate::paths::PortablePaths;
+use crate::paths::AppPaths;
 use crate::process;
 use crate::progress;
 use crate::settings::{Settings, SettingsStore};
@@ -399,7 +399,7 @@ fn enqueue_for_mode(
     clip: Option<&ClipSpec>,
     out_dir_override: Option<&Path>,
 ) -> Result<TaskSnapshot, String> {
-    let paths = app.state::<PortablePaths>();
+    let paths = app.state::<AppPaths>();
     let store = app.state::<Arc<TaskStore>>();
     let settings = app.state::<SettingsStore>().get();
 
@@ -459,7 +459,7 @@ fn enqueue_for_mode(
 /// Starts queued tasks while concurrency allows and the queue is not paused.
 fn pump(app: &AppHandle) {
     let store = app.state::<Arc<TaskStore>>().inner().clone();
-    let exe: PathBuf = app.state::<PortablePaths>().ytdlp();
+    let exe: PathBuf = app.state::<AppPaths>().ytdlp();
     let mut started_any = false;
 
     loop {
@@ -655,7 +655,7 @@ pub fn queue_state(store: State<'_, Arc<TaskStore>>) -> QueueState {
 pub async fn probe_metadata(app: AppHandle, url: String) -> Result<metadata::VideoInfo, String> {
     let url = validate_url(&url)?;
     let exe = {
-        let paths = app.state::<PortablePaths>();
+        let paths = app.state::<AppPaths>();
         paths.ytdlp()
     };
     metadata::probe(&exe, &url).await
@@ -857,8 +857,20 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Result<Settings, Str
 #[tauri::command]
 pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
     let exe = {
-        let paths = app.state::<PortablePaths>();
-        paths.ytdlp()
+        let paths = app.state::<AppPaths>();
+        #[cfg(target_os = "macos")]
+        {
+            crate::binaries::ensure_managed_ytdlp(&paths).ok_or_else(|| {
+                i18n::t(
+                    "не удалось подготовить обновляемую копию yt-dlp",
+                    "could not prepare the managed yt-dlp copy",
+                )
+            })?
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            paths.ytdlp()
+        }
     };
     let output = process::prepare(&exe, &[OsString::from("--update")])
         .output()
@@ -881,7 +893,15 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
         return Err(reason.trim().to_string());
     }
 
-    crate::binaries::read_version(&exe, "--version")
+    #[cfg(target_os = "macos")]
+    crate::binaries::sign_macos(&exe).map_err(|error| {
+        i18n::tf(
+            || format!("не удалось подписать обновлённый yt-dlp: {error}"),
+            || format!("could not sign the updated yt-dlp: {error}"),
+        )
+    })?;
+
+    let version = crate::binaries::read_version(&exe, "--version")
         .as_deref()
         .and_then(crate::binaries::parse_ytdlp_version)
         .ok_or_else(|| {
@@ -889,7 +909,13 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
                 "версия после обновления не определена",
                 "could not detect the version after the update",
             )
-        })
+        })?;
+    #[cfg(target_os = "macos")]
+    {
+        let paths = app.state::<AppPaths>();
+        let _ = std::fs::write(paths.managed_bin().join("yt-dlp.version"), &version);
+    }
+    Ok(version)
 }
 
 #[cfg(test)]

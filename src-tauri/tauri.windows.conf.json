@@ -1,0 +1,8 @@
+{
+  "app": {
+    "appDirectoriesOverride": "./data/appdata"
+  },
+  "bundle": {
+    "active": false
+  }
+}

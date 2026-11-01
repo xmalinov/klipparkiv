@@ -1,7 +1,8 @@
 # Contributing
 
-Thanks for taking the time to help. This project is a small, opinionated Windows
-portable app, so please keep changes focused.
+Thanks for taking the time to help. This project is a small, opinionated
+cross-platform app (portable on Windows, a DMG app on macOS), so please keep
+changes focused.
 
 ## Before you start
 
@@ -12,26 +13,33 @@ portable app, so please keep changes focused.
 
 ## Setup
 
-```powershell
+```bash
 npm ci
 npm run tauri dev
 ```
 
-You need Node.js 24+, Rust stable with the MSVC target, MSVC Build Tools and WebView2.
-Put `yt-dlp.exe`, `ffmpeg.exe` and `ffprobe.exe` into `bin\` in the project root to test
-real downloads.
+You need Node.js 24+ and Rust stable. Windows also needs MSVC Build Tools and
+WebView2; macOS needs Xcode Command Line Tools.
+
+For real downloads:
+
+- Windows: put `yt-dlp.exe`, `ffmpeg.exe` and `ffprobe.exe` into `bin\`.
+- macOS: run `node scripts/fetch-binaries.mjs mac-arm64` (or `mac-x64`). The
+  binaries go to `src-tauri/resources/bin` and are copied into the app; dev
+  builds also find them there.
 
 ## Checks
 
 All of these must pass before a pull request is merged:
 
-```powershell
+```bash
 npm run typecheck
 npm run test:run
 npm run build
-cargo fmt   --manifest-path src-tauri\Cargo.toml -- --check
-cargo clippy --manifest-path src-tauri\Cargo.toml --all-targets -- -D warnings
-cargo test  --manifest-path src-tauri\Cargo.toml
+cargo fmt    --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test   --manifest-path src-tauri/Cargo.toml
+node scripts/check-version.mjs
 ```
 
 ## Style

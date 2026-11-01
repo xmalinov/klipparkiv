@@ -444,7 +444,13 @@ export default function SettingsDialog({
               </div>
               <div className="row">
                 <span className="label">{t("settings.mode")}</span>
-                <span className="muted">{t("settings.modePortable")}</span>
+                <span className="muted">
+                  {t(
+                    info?.installKind === "installed"
+                      ? "settings.modeInstalled"
+                      : "settings.modePortable",
+                  )}
+                </span>
               </div>
               <p className="hint">{t("settings.aboutHint")}</p>
             </>

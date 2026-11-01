@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "appDirectoriesOverride": "./data/appdata",
     "windows": [
       {
         "title": "Klipparkiv",

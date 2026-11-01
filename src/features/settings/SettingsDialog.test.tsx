@@ -21,6 +21,8 @@ const settings = {
 
 const info = {
   root: "C:\\apps\\klipparkiv",
+  supportRoot: "C:\\apps\\klipparkiv\\data",
+  installKind: "portable" as const,
   writable: true,
   version: "1.1.0",
   updateConfigured: true,

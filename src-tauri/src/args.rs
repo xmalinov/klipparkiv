@@ -217,8 +217,7 @@ pub fn build(request: &ArgsRequest<'_>) -> Result<Vec<OsString>, ArgsError> {
         // thumbnail location is a separate typed output template.
         push(&mut args, "-o");
         let mut template = OsString::from("thumbnail:");
-        template.push(thumbs);
-        template.push(r"\%(id)s.%(ext)s");
+        template.push(thumbs.join("%(id)s.%(ext)s"));
         args.push(template);
     }
 
@@ -276,8 +275,19 @@ fn push(args: &mut Vec<OsString>, value: &str) {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     const ROOT: &str = r"C:\apps\klipparkiv";
+    #[cfg(not(windows))]
+    const ROOT: &str = "/apps/klipparkiv";
     const URL: &str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+
+    fn path(parts: &[&str]) -> String {
+        let mut path = PathBuf::from(ROOT);
+        for part in parts {
+            path.push(part);
+        }
+        path.to_string_lossy().into_owned()
+    }
 
     fn paths() -> (PathBuf, PathBuf, PathBuf) {
         let root = PathBuf::from(ROOT);
@@ -328,31 +338,29 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(
-            strings(args),
-            vec![
-                "--ignore-config",
-                "--newline",
-                "--progress-template",
-                crate::progress::PROGRESS_TEMPLATE,
-                "--no-color",
-                "--no-playlist",
-                "--ffmpeg-location",
-                r"C:\apps\klipparkiv\bin",
-                "-x",
-                "--audio-format",
-                "mp3",
-                "--audio-quality",
-                "320K",
-                "--embed-thumbnail",
-                "--add-metadata",
-                "--download-archive",
-                r"C:\apps\klipparkiv\data\archive_audio.txt",
-                "-o",
-                r"C:\apps\klipparkiv\audio\%(id)s - %(title)s.%(ext)s",
-                URL,
-            ]
-        );
+        let expected: Vec<String> = vec![
+            "--ignore-config".to_string(),
+            "--newline".to_string(),
+            "--progress-template".to_string(),
+            crate::progress::PROGRESS_TEMPLATE.to_string(),
+            "--no-color".to_string(),
+            "--no-playlist".to_string(),
+            "--ffmpeg-location".to_string(),
+            path(&["bin"]),
+            "-x".to_string(),
+            "--audio-format".to_string(),
+            "mp3".to_string(),
+            "--audio-quality".to_string(),
+            "320K".to_string(),
+            "--embed-thumbnail".to_string(),
+            "--add-metadata".to_string(),
+            "--download-archive".to_string(),
+            path(&["data", "archive_audio.txt"]),
+            "-o".to_string(),
+            path(&["audio", AUDIO_NAME]),
+            URL.to_string(),
+        ];
+        assert_eq!(strings(args), expected);
     }
 
     #[test]
@@ -381,7 +389,7 @@ mod tests {
             args[args.len() - 3..].to_vec(),
             vec![
                 "-o".to_string(),
-                r"C:\apps\klipparkiv\video\%(id)s - %(title)s.%(ext)s".to_string(),
+                path(&["video", AUDIO_NAME]),
                 URL.to_string(),
             ]
         );
@@ -412,12 +420,7 @@ mod tests {
             args.windows(2)
                 .any(|w| w == ["--download-sections", "*00:01:30-00:05:00"])
         );
-        assert!(
-            args.contains(
-                &r"C:\apps\klipparkiv\audio\%(id)s_%(section_start)s-%(section_end)s.%(ext)s"
-                    .to_string()
-            )
-        );
+        assert!(args.contains(&path(&["audio", CLIP_NAME]).to_string()));
     }
 
     #[test]
@@ -452,7 +455,7 @@ mod tests {
         .unwrap();
         let args = strings(args);
 
-        assert!(args.contains(&r"C:\apps\klipparkiv\data\archive_audio.txt".to_string()));
+        assert!(args.contains(&path(&["data", "archive_audio.txt"])));
         assert!(args.iter().all(|a| !a.contains("..")));
     }
 
@@ -495,9 +498,10 @@ mod tests {
             args.windows(2)
                 .any(|w| w == ["--convert-thumbnails", "jpg"])
         );
-        assert!(
-            args.contains(&r"thumbnail:C:\apps\klipparkiv\data\thumbs\%(id)s.%(ext)s".to_string())
-        );
+        assert!(args.contains(&format!(
+            "thumbnail:{}",
+            path(&["data", "thumbs", "%(id)s.%(ext)s"])
+        )));
         assert!(!args.contains(&"-P".to_string()));
     }
 

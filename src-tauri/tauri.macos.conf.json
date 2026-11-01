@@ -1,0 +1,16 @@
+{
+  "app": {
+    "appDirectoriesOverride": "$DATA/Klipparkiv"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "bundleName": "Klipparkiv"
+    },
+    "resources": {
+      "resources/bin/": "bin/"
+    }
+  }
+}

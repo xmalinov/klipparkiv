@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::WalkDir;
 
 use crate::i18n;
-use crate::paths::PortablePaths;
+use crate::paths::AppPaths;
 use crate::settings::SettingsStore;
 
 const SCHEMA: &str = "\
@@ -457,7 +457,7 @@ pub fn library_query(
 pub async fn library_scan(app: AppHandle, full: bool) -> Result<ScanStats, String> {
     let app_for_scan = app.clone();
     let stats = tauri::async_runtime::spawn_blocking(move || {
-        let paths = app_for_scan.state::<PortablePaths>();
+        let paths = app_for_scan.state::<AppPaths>();
         let library = app_for_scan.state::<Library>();
         let root = paths.root().to_path_buf();
         let ffprobe = paths.ffprobe();
@@ -483,7 +483,7 @@ pub fn library_remove(library: State<'_, Library>, id: String) -> Result<(), Str
 
 #[tauri::command]
 pub fn library_thumb(app: AppHandle, path: String) -> Result<String, String> {
-    let root = app.state::<PortablePaths>().root().to_path_buf();
+    let root = app.state::<AppPaths>().root().to_path_buf();
     let resolved = resolve_thumb(&root, Path::new(&path))?;
     let bytes = fs::read(resolved).map_err(|error| error.to_string())?;
     Ok(format!("data:image/jpeg;base64,{}", STANDARD.encode(bytes)))

@@ -11,7 +11,7 @@ mod settings;
 mod updater;
 
 use commands::TaskStore;
-use paths::PortablePaths;
+use paths::AppPaths;
 use serde::Serialize;
 use settings::SettingsStore;
 use std::sync::Arc;
@@ -41,6 +41,8 @@ pub fn refresh_tray_language(app: &tauri::AppHandle) {
 #[serde(rename_all = "camelCase")]
 struct AppInfo {
     root: String,
+    support_root: String,
+    install_kind: String,
     writable: bool,
     version: String,
     update_configured: bool,
@@ -50,8 +52,10 @@ struct AppInfo {
 }
 
 #[tauri::command]
-fn app_info(paths: tauri::State<'_, PortablePaths>) -> AppInfo {
+fn app_info(paths: tauri::State<'_, AppPaths>) -> AppInfo {
     let writable = paths.ensure_layout().is_ok();
+    #[cfg(target_os = "macos")]
+    let _ = binaries::ensure_managed_ytdlp(&paths);
     let ffmpeg = binaries::read_version(&paths.ffmpeg(), "-version")
         .as_deref()
         .and_then(binaries::parse_ffmpeg_version);
@@ -61,12 +65,27 @@ fn app_info(paths: tauri::State<'_, PortablePaths>) -> AppInfo {
 
     AppInfo {
         root: paths.root().display().to_string(),
+        support_root: paths.support().display().to_string(),
+        install_kind: match paths.kind() {
+            paths::InstallKind::Portable => "portable",
+            paths::InstallKind::Installed => "installed",
+        }
+        .to_string(),
         writable,
         version: env!("CARGO_PKG_VERSION").to_string(),
         update_configured: updater::is_configured(),
-        ytdlp: binaries::read_version(&paths.ytdlp(), "--version")
-            .as_deref()
-            .and_then(binaries::parse_ytdlp_version),
+        ytdlp: {
+            #[cfg(target_os = "macos")]
+            {
+                binaries::ytdlp_version(&paths)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                binaries::read_version(&paths.ytdlp(), "--version")
+                    .as_deref()
+                    .and_then(binaries::parse_ytdlp_version)
+            }
+        },
         ffmpeg,
         ffprobe,
     }
@@ -74,8 +93,9 @@ fn app_info(paths: tauri::State<'_, PortablePaths>) -> AppInfo {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let paths = PortablePaths::current().expect("cannot resolve portable root");
+    let paths = AppPaths::current().expect("cannot resolve the app root");
     std::fs::create_dir_all(paths.data()).ok();
+    std::fs::create_dir_all(paths.support()).ok();
     let library = library::Library::open(&paths.data().join("library.db"))
         .expect("cannot open library database");
     let settings_store = SettingsStore::load(paths.data().join("settings.json"));
@@ -98,6 +118,19 @@ pub fn run() {
         .manage(tasks)
         .manage(UpdateStore::default())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_menu(Menu::default(app.handle())?)?;
+
+            let paths = app.state::<AppPaths>().inner().clone();
+            let cleanup_paths = paths.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                updater::cleanup_stale_state(&cleanup_paths);
+            });
+            #[cfg(target_os = "macos")]
+            tauri::async_runtime::spawn_blocking(move || {
+                let _ = binaries::ensure_managed_ytdlp(&paths);
+            });
+
             let open =
                 MenuItem::with_id(app, "open", i18n::t("Открыть", "Open"), true, None::<&str>)?;
             let pause = MenuItem::with_id(
@@ -116,9 +149,15 @@ pub fn run() {
                 quit: quit.clone(),
             });
 
-            if let Some(icon) = app.default_window_icon() {
-                TrayIconBuilder::with_id("main")
-                    .icon(icon.clone())
+            #[cfg(target_os = "macos")]
+            let tray_icon =
+                tauri::image::Image::from_bytes(include_bytes!("../icons/trayTemplate.png")).ok();
+            #[cfg(not(target_os = "macos"))]
+            let tray_icon = app.default_window_icon().cloned();
+
+            if let Some(icon) = tray_icon {
+                let builder = TrayIconBuilder::with_id("main")
+                    .icon(icon)
                     .tooltip("Klipparkiv")
                     .menu(&menu)
                     .show_menu_on_left_click(true)
@@ -134,8 +173,10 @@ pub fn run() {
                         }
                         "quit" => app.exit(0),
                         _ => {}
-                    })
-                    .build(app)?;
+                    });
+                #[cfg(target_os = "macos")]
+                let builder = builder.icon_as_template(true);
+                builder.build(app)?;
             }
             updater::schedule_startup_check(app.handle().clone());
             Ok(())
@@ -157,6 +198,7 @@ pub fn run() {
             updater::check_app_update,
             updater::download_app_update,
             updater::install_app_update,
+            updater::open_manual_update,
             updater::cancel_pending_update,
             library::library_query,
             library::library_scan,
@@ -171,17 +213,39 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn tray_template_is_a_valid_png() {
+        tauri::image::Image::from_bytes(include_bytes!("../icons/trayTemplate.png")).unwrap();
+        tauri::image::Image::from_bytes(include_bytes!("../icons/trayTemplate@2x.png")).unwrap();
+    }
+
     #[test]
     fn app_info_reports_dev_root_and_bundled_binaries() {
-        let paths = PortablePaths::current().unwrap();
+        let paths = AppPaths::current().unwrap();
         let info = AppInfo {
             root: paths.root().display().to_string(),
+            support_root: paths.support().display().to_string(),
+            install_kind: match paths.kind() {
+                paths::InstallKind::Portable => "portable",
+                paths::InstallKind::Installed => "installed",
+            }
+            .to_string(),
             writable: paths.ensure_layout().is_ok(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             update_configured: updater::is_configured(),
-            ytdlp: binaries::read_version(&paths.ytdlp(), "--version")
-                .as_deref()
-                .and_then(binaries::parse_ytdlp_version),
+            ytdlp: {
+                #[cfg(target_os = "macos")]
+                {
+                    binaries::ytdlp_version(&paths)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    binaries::read_version(&paths.ytdlp(), "--version")
+                        .as_deref()
+                        .and_then(binaries::parse_ytdlp_version)
+                }
+            },
             ffmpeg: binaries::read_version(&paths.ffmpeg(), "-version")
                 .as_deref()
                 .and_then(binaries::parse_ffmpeg_version),

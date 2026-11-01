@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type AppInfo = {
   root: string;
+  supportRoot: string;
+  installKind: "portable" | "installed";
   writable: boolean;
   version: string;
   updateConfigured: boolean;

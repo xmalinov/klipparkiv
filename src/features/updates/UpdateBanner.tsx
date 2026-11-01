@@ -7,6 +7,7 @@ import {
   formatBytes,
   getUpdateStatus,
   installAppUpdate,
+  openManualUpdate,
   subscribeUpdate,
   type UpdateStatus,
 } from "../../api/updates";
@@ -53,6 +54,7 @@ export default function UpdateBanner() {
     "ready",
     "deferred",
     "installing",
+    "manual",
     "error",
   ];
   if (!visibleStates.includes(status.state)) return null;
@@ -90,7 +92,9 @@ export default function UpdateBanner() {
                   ? t("update.deferred")
                   : status.state === "installing"
                     ? t("update.installing")
-                    : t("update.error", { error: error ?? "" })}
+                    : status.state === "manual"
+                      ? t("update.manual", { version: status.version ?? "" })
+                      : t("update.error", { error: error ?? "" })}
         </strong>
         {status.state === "available" && status.size !== null && (
           <span className="update-size">{formatBytes(status.size, language)}</span>
@@ -131,6 +135,16 @@ export default function UpdateBanner() {
             onClick={() => run(installAppUpdate)}
           >
             {t("update.restart")}
+          </button>
+        )}
+        {status.state === "manual" && (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy}
+            onClick={() => run(openManualUpdate)}
+          >
+            {t("update.openDmg")}
           </button>
         )}
         {status.state === "deferred" && (

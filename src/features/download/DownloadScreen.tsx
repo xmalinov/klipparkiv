@@ -165,11 +165,12 @@ export default function DownloadScreen({ root }: { root?: string }) {
   const effectiveMode = isClip ? clipKind : mode;
   const wantsVideo = effectiveMode === "video" || effectiveMode === "both";
   const wantsAudio = effectiveMode === "audio" || effectiveMode === "both";
+  const pathSeparator = navigator.userAgent.includes("Mac") ? "/" : "\\";
   const defaultSubdir = wantsVideo && !wantsAudio ? videoSubdir : audioSubdir;
   const targetDir =
     outDir ??
     (effectiveMode === "both"
-      ? `${root ?? ""} · ${audioSubdir}\\ ${language === "ru" ? "и" : "and"} ${videoSubdir}\\`
+      ? `${root ?? ""} · ${audioSubdir}${pathSeparator} ${language === "ru" ? "и" : "and"} ${videoSubdir}${pathSeparator}`
       : `${root ?? ""}\\${defaultSubdir}`);
   const outsideRoot =
     outDir !== null && root !== undefined && !outDir.toLowerCase().startsWith(root.toLowerCase());

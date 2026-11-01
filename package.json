@@ -20,6 +20,12 @@
     "typecheck": "tsc --noEmit",
     "build:portable": "tauri build --no-bundle && cargo build --release --manifest-path src-tauri/Cargo.toml --bin klipparkiv-updater",
     "pack:portable": "powershell -ExecutionPolicy Bypass -File scripts/pack-portable.ps1",
+    "build:macos": "tauri build --bundles app",
+    "pack:macos": "bash scripts/macos/pack.sh",
+    "binaries:mac-x64": "node scripts/fetch-binaries.mjs mac-x64",
+    "binaries:mac-arm64": "node scripts/fetch-binaries.mjs mac-arm64",
+    "check:version": "node scripts/check-version.mjs",
+    "manifest:merge": "node scripts/merge-update-manifest.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

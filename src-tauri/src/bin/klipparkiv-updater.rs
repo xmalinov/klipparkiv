@@ -1,9 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! Tiny helper that replaces `klipparkiv.exe` after the main process exits.
+//! Tiny helper that replaces the application after the main process exits.
 //!
-//! Kept separate from the Tauri binary on purpose: it must not link WebView2
-//! or depend on the frontend, and it stays running while the app is replaced.
+//! On Windows it replaces `klipparkiv.exe`. On macOS it replaces the whole
+//! `Klipparkiv.app` bundle, because the signed bundle cannot be patched in
+//! place. The helper is copied outside the bundle before it runs.
 
 use std::ffi::OsString;
 use std::fs;
@@ -11,13 +12,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn main() {
-    eprintln!("klipparkiv-updater is only supported on Windows");
+    eprintln!("klipparkiv-updater is only supported on Windows and macOS");
     std::process::exit(1);
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn main() {
     match parse_args(std::env::args_os().skip(1)) {
         Ok(args) => {
@@ -39,6 +40,8 @@ struct Args {
     target: PathBuf,
     backup: PathBuf,
     log: PathBuf,
+    support: Option<PathBuf>,
+    relaunch: bool,
 }
 
 fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Args, String> {
@@ -47,9 +50,15 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Args, String> {
     let mut target = None;
     let mut backup = None;
     let mut log = None;
+    let mut support = None;
+    let mut relaunch = false;
     let mut args = args;
 
     while let Some(flag) = args.next() {
+        if flag == "--relaunch" {
+            relaunch = true;
+            continue;
+        }
         let value = args
             .next()
             .ok_or_else(|| format!("missing value for {}", flag.to_string_lossy()))?;
@@ -66,6 +75,7 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Args, String> {
             "--target" => target = Some(PathBuf::from(value)),
             "--backup" => backup = Some(PathBuf::from(value)),
             "--log" => log = Some(PathBuf::from(value)),
+            "--support" => support = Some(PathBuf::from(value)),
             other => return Err(format!("unknown argument: {other}")),
         }
     }
@@ -76,11 +86,14 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Args, String> {
         target: target.ok_or_else(|| "missing --target".to_string())?,
         backup: backup.ok_or_else(|| "missing --backup".to_string())?,
         log: log.ok_or_else(|| "missing --log".to_string())?,
+        support,
+        relaunch,
     })
 }
 
 #[cfg(windows)]
 fn run(args: Args) -> Result<(), String> {
+    let _ = (&args.support, args.relaunch);
     let root = args
         .target
         .parent()
@@ -165,7 +178,95 @@ fn run(args: Args) -> Result<(), String> {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_os = "macos")]
+fn run(args: Args) -> Result<(), String> {
+    let support = args
+        .support
+        .as_ref()
+        .ok_or_else(|| "missing --support".to_string())?
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve the support folder: {error}"))?;
+    let target = args
+        .target
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve the app bundle: {error}"))?;
+    let source = args
+        .source
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve the new app bundle: {error}"))?;
+
+    if !is_app_bundle(&target) {
+        return Err(format!("target is not an app bundle: {}", target.display()));
+    }
+    if !is_app_bundle(&source) {
+        return Err(format!("source is not an app bundle: {}", source.display()));
+    }
+    if source == target {
+        return Err("source and target are the same bundle".to_string());
+    }
+    if !is_inside(&support, &source) {
+        return Err("source is outside the support folder".to_string());
+    }
+    if let Some(parent) = args.backup.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create the backup folder: {error}"))?;
+    }
+    if let Some(parent) = args.log.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create the log folder: {error}"))?;
+    }
+    if !is_inside(&support, &args.backup) {
+        return Err("backup is outside the support folder".to_string());
+    }
+    if !is_inside(&support, &args.log) {
+        return Err("log is outside the support folder".to_string());
+    }
+
+    log(&args.log, "waiting for the main process to exit");
+    wait_for_pid(args.wait_pid, Duration::from_secs(60))?;
+    log(&args.log, "main process exited; replacing the app bundle");
+
+    if let Err(error) = replace_bundle(&source, &target, &args.backup) {
+        log(&args.log, &format!("replace failed: {error}"));
+        return Err(format!("cannot replace the app bundle: {error}"));
+    }
+    // The archive was verified with minisign before extraction. Drop any
+    // quarantine xattr that could have been inherited during extraction.
+    let _ = std::process::Command::new("xattr")
+        .args(["-dr", "com.apple.quarantine"])
+        .arg(&target)
+        .status();
+    log(&args.log, "app bundle replaced");
+
+    if args.relaunch && !relaunch(&target) {
+        log(
+            &args.log,
+            "new version did not start; restoring the previous bundle",
+        );
+        restore_bundle(&target, &args.backup)?;
+        let _ = relaunch(&target);
+        return Err("the new version failed to start; rolled back".to_string());
+    }
+
+    if let Some(extract_dir) = source.parent() {
+        let _ = fs::remove_dir_all(extract_dir);
+    }
+    log(&args.log, "new version is running");
+    Ok(())
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn log(path: &Path, message: &str) {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "[{timestamp}] {message}");
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 fn is_inside(root: &Path, path: &Path) -> bool {
     let resolved = if path.exists() {
         path.canonicalize().ok()
@@ -177,15 +278,87 @@ fn is_inside(root: &Path, path: &Path) -> bool {
     resolved.is_some_and(|path| path.starts_with(root))
 }
 
-#[cfg(windows)]
-fn log(path: &Path, message: &str) {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or_default();
-    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "[{timestamp}] {message}");
+#[cfg(target_os = "macos")]
+fn is_app_bundle(path: &Path) -> bool {
+    path.is_dir()
+        && path.extension().and_then(|ext| ext.to_str()) == Some("app")
+        && path.join("Contents").join("Info.plist").is_file()
+}
+
+#[cfg(target_os = "macos")]
+fn wait_for_pid(pid: u32, timeout: Duration) -> Result<(), String> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+    loop {
+        let result = unsafe { libc::kill(pid as i32, 0) };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            match error.raw_os_error() {
+                Some(libc::EPERM) => {}
+                _ => return Ok(()),
+            }
+        }
+        if start.elapsed() >= timeout {
+            return Err("timed out waiting for the app to exit".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+#[cfg(target_os = "macos")]
+fn replace_bundle(source: &Path, target: &Path, backup: &Path) -> Result<(), String> {
+    let _ = fs::remove_dir_all(backup);
+    if let Err(error) = move_dir(target, backup) {
+        return Err(format!("cannot back up the app bundle: {error}"));
+    }
+    if let Err(error) = move_dir(source, target) {
+        let _ = move_dir(backup, target);
+        return Err(format!("cannot move the new app bundle: {error}"));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn restore_bundle(target: &Path, backup: &Path) -> Result<(), String> {
+    let _ = fs::remove_dir_all(target);
+    move_dir(backup, target).map_err(|error| format!("cannot restore the app bundle: {error}"))
+}
+
+#[cfg(target_os = "macos")]
+fn move_dir(source: &Path, target: &Path) -> std::io::Result<()> {
+    match fs::rename(source, target) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Different volumes: ditto preserves metadata, symlinks and
+            // permissions, unlike a plain recursive copy.
+            let status = std::process::Command::new("ditto")
+                .arg(source)
+                .arg(target)
+                .status()?;
+            if !status.success() {
+                return Err(std::io::Error::other(format!("ditto failed with {status}")));
+            }
+            fs::remove_dir_all(source)
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn relaunch(target: &Path) -> bool {
+    let opened = std::process::Command::new("open")
+        .arg("-n")
+        .arg(target)
+        .status();
+    if !opened.is_ok_and(|status| status.success()) {
+        return false;
+    }
+    std::thread::sleep(Duration::from_secs(3));
+    let marker = format!("{}/Contents/MacOS/klipparkiv", target.display());
+    std::process::Command::new("pgrep")
+        .args(["-f", &marker])
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 #[cfg(windows)]
@@ -305,7 +478,7 @@ fn replace_file_once(source: &Path, target: &Path, backup: &Path) -> std::io::Re
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 mod tests {
     use super::*;
 
@@ -323,21 +496,65 @@ mod tests {
             "--wait-pid",
             "42",
             "--source",
-            "C:\\app\\data\\update\\next.exe",
+            "/tmp/app/next",
             "--target",
-            "C:\\app\\klipparkiv.exe",
+            "/tmp/app/current",
             "--backup",
-            "C:\\app\\data\\update\\backup\\old.exe",
+            "/tmp/app/backup",
             "--log",
-            "C:\\app\\data\\update\\updater.log",
+            "/tmp/app/updater.log",
         ]))
         .unwrap();
         assert_eq!(parsed.wait_pid, 42);
-        assert_eq!(parsed.source, PathBuf::from(r"C:\app\data\update\next.exe"));
+        assert_eq!(parsed.source, PathBuf::from("/tmp/app/next"));
+        assert!(!parsed.relaunch);
+    }
+
+    #[test]
+    fn parses_support_and_relaunch() {
+        let parsed = parse_args(args(&[
+            "--wait-pid",
+            "42",
+            "--source",
+            "/tmp/app/next",
+            "--target",
+            "/tmp/app/current",
+            "--backup",
+            "/tmp/app/backup",
+            "--log",
+            "/tmp/app/updater.log",
+            "--support",
+            "/tmp/support",
+            "--relaunch",
+        ]))
+        .unwrap();
+        assert_eq!(parsed.support, Some(PathBuf::from("/tmp/support")));
+        assert!(parsed.relaunch);
     }
 
     #[test]
     fn rejects_missing_arguments() {
         assert!(parse_args(args(&["--wait-pid", "42"])).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn replaces_and_restores_an_app_bundle() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("Klipparkiv.app");
+        let source = temp.path().join("support/Klipparkiv.app");
+        let backup = temp.path().join("support/backup/Klipparkiv-1.app");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&source).unwrap();
+        fs::write(target.join("version"), b"old").unwrap();
+        fs::write(source.join("version"), b"new").unwrap();
+
+        replace_bundle(&source, &target, &backup).unwrap();
+        assert_eq!(fs::read_to_string(target.join("version")).unwrap(), "new");
+        assert_eq!(fs::read_to_string(backup.join("version")).unwrap(), "old");
+
+        restore_bundle(&target, &backup).unwrap();
+        assert_eq!(fs::read_to_string(target.join("version")).unwrap(), "old");
+        assert!(!backup.exists());
     }
 }

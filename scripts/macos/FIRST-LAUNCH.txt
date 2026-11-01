@@ -1,0 +1,23 @@
+Klipparkiv for macOS
+====================
+
+The app is not notarized by Apple. macOS will ask for confirmation on the
+first launch. This is expected and only happens once.
+
+1. Drag Klipparkiv into Applications.
+2. Open Klipparkiv.
+3. If macOS blocks it:
+   - macOS 15 and newer: System Settings -> Privacy & Security ->
+     scroll down -> Open Anyway.
+   - macOS 14 and older: right-click Klipparkiv -> Open -> Open.
+4. Enter your login password if asked.
+
+Terminal alternative:
+  xattr -dr com.apple.quarantine /Applications/Klipparkiv.app
+
+Data location:
+  ~/Movies/Klipparkiv
+
+Updates are installed inside the app and do not require this confirmation
+again. If automatic replacement is not possible, the app downloads the DMG
+and asks you to drag it into Applications.

@@ -10,6 +10,7 @@ export type UpdateState =
   | "ready"
   | "deferred"
   | "installing"
+  | "manual"
   | "error";
 
 export interface UpdateStatus {
@@ -37,6 +38,10 @@ export function downloadAppUpdate(): Promise<UpdateStatus> {
 
 export function installAppUpdate(): Promise<UpdateStatus> {
   return invoke<UpdateStatus>("install_app_update");
+}
+
+export function openManualUpdate(): Promise<UpdateStatus> {
+  return invoke<UpdateStatus>("open_manual_update");
 }
 
 export function cancelPendingUpdate(): Promise<UpdateStatus> {

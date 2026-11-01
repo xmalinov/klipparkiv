@@ -47,7 +47,7 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByText("Не найдены в bin\\: yt-dlp"),
+      await screen.findByText("Не найдены в bin: yt-dlp"),
     ).toBeInTheDocument();
   });
 

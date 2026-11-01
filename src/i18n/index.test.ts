@@ -11,7 +11,7 @@ describe("i18n", () => {
     expect(translate("en", "download.submit")).toBe("Download");
     expect(
       translate("en", "app.missingBinaries", { names: "yt-dlp, ffmpeg" }),
-    ).toBe("Not found in bin\\: yt-dlp, ffmpeg");
+    ).toBe("Not found in bin: yt-dlp, ffmpeg");
   });
 
   it("falls back to the Russian template for a missing parameter", () => {
