@@ -35,7 +35,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path bin | Out-Null
           Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "bin/yt-dlp.exe"
           $zip = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile $zip
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zip
           $dst = Join-Path $env:RUNNER_TEMP "ffmpeg"
           Expand-Archive $zip -DestinationPath $dst
           $ffmpeg = Get-ChildItem $dst -Recurse -Filter ffmpeg.exe | Select-Object -First 1
