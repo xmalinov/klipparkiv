@@ -1518,13 +1518,13 @@ async fn download_asset_file(
 pub async fn open_manual_update(app: AppHandle) -> UpdateStatus {
     #[cfg(not(target_os = "macos"))]
     {
-        return error_status(
+        error_status(
             &app,
             i18n::t(
                 "ручная установка доступна только на macOS",
                 "manual installation is only available on macOS",
             ),
-        );
+        )
     }
 
     #[cfg(target_os = "macos")]

@@ -15,6 +15,7 @@ pub const PORTABLE_MARKER: &str = ".klipparkiv-portable";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallKind {
     Portable,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Installed,
 }
 
@@ -62,6 +63,7 @@ impl AppPaths {
     }
 
     /// Installed layout with explicit roots. Used by macOS and by tests.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn installed(
         root: impl Into<PathBuf>,
         support: impl Into<PathBuf>,
