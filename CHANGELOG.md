@@ -10,7 +10,7 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
-### [Unreleased]
+### [1.3.0] — 2026-11-01
 
 #### Added
 
@@ -78,7 +78,7 @@ First public release.
 
 ## Русский
 
-### [Unreleased]
+### [1.3.0] — 2026-11-01
 
 #### Добавлено
 

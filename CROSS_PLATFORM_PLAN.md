@@ -1,7 +1,7 @@
 # Klipparkiv: план сборки и обновлений для Windows и macOS
 
-Статус: базовый macOS-билд и апдейтер реализованы; нужен финальный QA
-на Apple Silicon, ключ подписи обновлений и прогон Windows CI.
+Статус: macOS-билд и апдейтер реализованы; Windows-сборка 1.3.0 проверена,
+macOS Intel проверен; осталось проверить Apple Silicon и пройти Windows CI.
 Ограничения: без Apple Developer ID, без notarization, без App Store.
 Распространение: GitHub Releases (portable ZIP для Windows, DMG для macOS).
 Обновления: внутри приложения на обеих платформах.
@@ -21,9 +21,11 @@
 - Tray-template иконка macOS.
 - Проверено: `cargo check/clippy/test`, `.app` + DMG + tar, `codesign`,
   распаковка и проверка подписи архива, launch в изолированном `HOME`.
+- Проверено вручную: Windows-сборка (загрузка и открытие видео), macOS Intel
+  (запуск, скачивание в H.264, открытие файла из библиотеки без ошибки ACL).
 - Не проверено: реальный Windows CI после изменений, Apple Silicon,
-  App Management TCC, подпись приватным ключом обновлений.
-- Тесты: 82 Rust + 5 helper + 47 frontend, clippy/fmt без ошибок.
+  App Management TCC, подпись приватным ключом обновлений в CI.
+- Тесты: 84 Rust + 5 helper + 47 frontend, clippy/fmt без ошибок.
 
 ---
 
@@ -1212,8 +1214,8 @@ update.json
 - Обновление приложения не трогает `root` и `support`, кроме
   `support/updates`, `support/backups`, `support/logs`.
 - Windows portable root не меняется.
-- При удалении приложения данные остаются; добавить в README инструкцию
-  удаления обеих папок.
+- При удалении приложения данные остаются; инструкция удаления обеих папок
+  добавлена в README.
 
 ---
 

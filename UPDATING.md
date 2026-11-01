@@ -36,6 +36,36 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`:
 The release workflow does **not** need a Developer ID or notarization. It needs
 only the existing updater signing key.
 
+## Release checklist
+
+1. Bump the version (see below) and move the `Unreleased` changelog entries into
+   the new version section.
+2. Update the README and the landing page on the `gh-pages` branch when the
+   supported platforms or install steps change.
+3. Run the checks and the version check for the new tag:
+
+   ```bash
+   npm run check:version
+   node scripts/check-version.mjs --tag v1.3.0
+   ```
+
+4. Commit, then push `main` and the tag:
+
+   ```bash
+   git tag -a v1.3.0 -m "Klipparkiv 1.3.0"
+   git push origin main v1.3.0
+   ```
+
+5. The Release workflow builds Windows and both macOS bundles, then creates a
+   **draft** release. Check the artifacts and publish it:
+
+   ```bash
+   gh release edit v1.3.0 --draft=false
+   ```
+
+6. `releases/latest` and the landing page start pointing at the new version only
+   after the release is published.
+
 ## Version bump
 
 Bump the version in all four files:
