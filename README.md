@@ -1,83 +1,74 @@
 ﻿# Klipparkiv
 
-**Portable Windows GUI for [yt-dlp](https://github.com/yt-dlp/yt-dlp).** Download audio,
-video and timecode clips, then browse everything in a built-in library.
+**Portable Windows GUI for yt-dlp** — save audio, video and timecode clips, then keep
+them in a local library. No installer, no registry, no admin rights.
+
+**[English](#english)** · **[Русский](#русский)**
+
+[![CI](https://github.com/xmalinov/klipparkiv/actions/workflows/ci.yml/badge.svg)](https://github.com/xmalinov/klipparkiv/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+| Download | Library | Settings |
+|:---:|:---:|:---:|
+| ![Download](assets/screenshots/download.png) | ![Library](assets/screenshots/library.png) | ![Settings](assets/screenshots/settings.png) |
+
+---
+
+## English
 
 *klipparkiv* (Swedish) — an archive of clippings.
 
-![Download screen](assets/screenshots/download.png)
-![Library](assets/screenshots/library.png)
-![Settings](assets/screenshots/settings.png)
-
-## Features
+### Features
 
 - **Audio** — MP3 128–320 kbps with cover art and tags.
-- **Video** — MP4 from 480p up to 2160p.
-- **Audio + Video** — one click, two files, two separate archives (so the audio
-  download never blocks the video one).
-- **Clips by timecode** — `00:01:30-00:05:00` for both audio and video.
-- **Batch mode** — drop a `.txt` with one URL per line and walk away.
-- **Queue** — 1–4 parallel downloads, pause/resume, cancel, per-item progress and logs.
-- **Metadata preview** — title, channel, duration, thumbnail and available formats
-  before downloading.
-- **Download archive** — items already saved are skipped automatically.
-- **Library** — covers, search, filters, sorting, "show in Explorer", open in the
-  system player. The index is a local SQLite database.
-- **Update yt-dlp** from the UI (YouTube changes often).
-- **Truly portable** — settings, library and thumbnails live in `data\` next to the
-  executable; media goes to `audio\` and `video\`. Nothing is written to the registry
-  or to `%APPDATA%`.
+- **Video** — MP4 480p–2160p.
+- **Audio + Video** — two files from one link, kept in separate archives.
+- **Clips** — cut audio or video by timecode, e.g. `00:01:30-00:05:00`.
+- **Batch** — one URL per line in a `.txt`; queue with 1–4 parallel downloads,
+  pause, resume and cancel.
+- **Metadata preview** — title, channel, duration, thumbnail, formats.
+- **Download archive** — items you already saved are skipped.
+- **Library** — covers, search, filters, sorting, open in the system player.
+- **Update yt-dlp** from the UI.
+- **Portable** — settings and index in `data\`, media in `audio\` and `video\`;
+  nothing is written to the registry or `%APPDATA%`.
 
-## Requirements
+### Requirements
 
-| | |
-|---|---|
-| OS | Windows 10/11 x64 |
-| Runtime | [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) (preinstalled on Windows 10/11) |
-| Disk | ~250 MB of free space for the portable build |
+Windows 10/11 x64 · WebView2 (preinstalled) · ~250 MB of disk space.
 
-## Download
+### Install
 
-Grab the latest `klipparkiv-<version>-win-x64.zip` from the
-[Releases](https://github.com/xmalinov/klipparkiv/releases) page.
+1. Download `klipparkiv-<version>-win-x64.zip` from
+   [Releases](https://github.com/xmalinov/klipparkiv/releases).
+2. Unpack the folder completely — do not run the exe from inside the archive.
+3. Run `klipparkiv.exe`.
 
-1. Unpack the whole folder (do not run the exe from inside the archive).
-2. Run `klipparkiv.exe`.
-3. Paste a YouTube link and press **Скачать** (*Download*).
+The build is unsigned, so SmartScreen may warn you: **More info → Run anyway**.
+The folder must be writable. FAT32 drives cannot store files over 4 GB — use
+exFAT/NTFS.
 
-The folder must be writable. The build is unsigned, so SmartScreen may warn you:
-**More info → Run anyway**.
+### Build from source
 
-## Build from source
-
-Prerequisites: Node.js 24+, Rust (stable, MSVC target), MSVC Build Tools, WebView2.
+Node.js 24+, Rust stable (MSVC target), MSVC Build Tools, WebView2.
 
 ```powershell
 npm ci
-npm run tauri dev        # dev mode (Vite + Tauri window)
-```
-
-Portable release:
-
-```powershell
+npm run tauri dev        # dev mode
 npm run build:portable   # src-tauri\target\release\klipparkiv.exe
-npm run pack:portable    # dist-portable\ + release\klipparkiv-<version>-win-x64.zip
+npm run pack:portable    # release\klipparkiv-<version>-win-x64.zip
 ```
 
-The application drives external binaries, which are **not** stored in this repository.
-Put them into `bin\` next to the exe (in dev mode — into the project root):
+The app drives external binaries that are **not** in this repository. Put them in
+`bin\` next to the exe:
 
 ```
-bin\
-  yt-dlp.exe
-  ffmpeg.exe
-  ffprobe.exe
+bin\yt-dlp.exe
+bin\ffmpeg.exe
+bin\ffprobe.exe
 ```
 
-`yt-dlp` can be replaced with a newer build at any time without losing settings
-or the library.
-
-### Checks
+Checks:
 
 ```powershell
 npm run typecheck
@@ -86,47 +77,110 @@ cargo test  --manifest-path src-tauri\Cargo.toml
 cargo clippy --manifest-path src-tauri\Cargo.toml --all-targets -- -D warnings
 ```
 
-## Project layout
+### Project layout
 
 | Path | Purpose |
 |---|---|
-| `src\` | React 19 + TypeScript frontend (screens, API bindings) |
-| `src-tauri\` | Rust backend: process control, progress parsing, SQLite library |
-| `src-tauri\src\args.rs` | Builds yt-dlp argument lists (audio, video, clips, batch) |
-| `src-tauri\src\process.rs` | Spawns and supervises yt-dlp/ffmpeg processes |
-| `src-tauri\src\library.rs` | Local media index and thumbnail cache |
-| `assets\screenshots\` | Screenshots used in this README |
-| `scripts\` | Portable packaging and WebView2 screenshot helpers |
+| `src\` | React 19 + TypeScript frontend |
+| `src-tauri\` | Rust backend: processes, progress, SQLite library |
+| `scripts\` | Portable packaging and screenshot helpers |
+| `assets\screenshots\` | Images used in this README |
 
-## Legal
+### Legal
 
-- Klipparkiv is a GUI. It does not download anything by itself — it runs
-  [yt-dlp](https://github.com/yt-dlp/yt-dlp) (Unlicense) and
-  [FFmpeg](https://ffmpeg.org/legal.html) (LGPL/GPL depending on the build).
-- Download only content you own or are allowed to save. Respect the terms of service
-  of the sites you use and the copyright of the authors.
-- This project is not affiliated with YouTube, Google, yt-dlp or FFmpeg.
+Klipparkiv is a GUI: it runs [yt-dlp](https://github.com/yt-dlp/yt-dlp) (Unlicense)
+and [FFmpeg](https://ffmpeg.org/legal.html) (LGPL/GPL depending on the build).
+Download only content you own or are allowed to save; respect the terms of service
+and the authors' copyright. Not affiliated with YouTube, Google, yt-dlp or FFmpeg.
 
-## Contributing
+### License
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and feature requests are welcome
-through the issue templates.
-
-## License
-
-[MIT](LICENSE) © Klipparkiv contributors
+[MIT](LICENSE) © Klipparkiv contributors. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for setup and checks.
 
 ---
 
-## По-русски
+## Русский
 
-**Klipparkiv** — портативное GUI для Windows поверх `yt-dlp`: MP3 320k, MP4 до 2160p,
-клипы по таймкоду, пакетная загрузка из списка и библиотека скачанного с обложками.
+*klipparkiv* (швед.) — архив вырезок.
 
-Приложение не устанавливается: распакуйте zip, запустите `klipparkiv.exe`, положите
-`bin\` рядом. Настройки и индекс библиотеки хранятся в `data\`, медиа — в `audio\`
-и `video\` внутри той же папки. Реестр и профиль пользователя не затрагиваются.
+### Возможности
 
-Скачайте свежую сборку на странице [Releases](https://github.com/xmalinov/klipparkiv/releases).
+- **Аудио** — MP3 128–320 кбит/с, с обложкой и тегами.
+- **Видео** — MP4 от 480p до 2160p.
+- **Аудио + видео** — два файла по одной ссылке, в разных архивах.
+- **Клипы** — вырезание аудио или видео по таймкоду, например `00:01:30-00:05:00`.
+- **Пакетно** — по одной ссылке в строке `.txt`; очередь на 1–4 параллельные
+  загрузки, пауза, продолжение, отмена.
+- **Предпросмотр** — название, канал, длительность, обложка, форматы.
+- **Архив загрузок** — уже сохранённое пропускается.
+- **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в системном плеере.
+- **Обновление yt-dlp** из интерфейса.
+- **Портативность** — настройки и индекс в `data\`, медиа в `audio\` и `video\`;
+  реестр и `%APPDATA%` не затрагиваются.
 
-Скачивайте только тот контент, на который у вас есть права.
+### Требования
+
+Windows 10/11 x64 · WebView2 (есть по умолчанию) · ~250 МБ на диске.
+
+### Установка
+
+1. Скачайте `klipparkiv-<версия>-win-x64.zip` со страницы
+   [Releases](https://github.com/xmalinov/klipparkiv/releases).
+2. Распакуйте папку целиком — не запускайте exe из архива.
+3. Запустите `klipparkiv.exe`.
+
+Сборка без подписи, поэтому SmartScreen может предупредить:
+**«Подробнее» → «Выполнить в любом случае»**. Папка должна быть доступна для
+записи. На FAT32 файлы больше 4 ГБ не поместятся — используйте exFAT/NTFS.
+
+### Сборка из исходников
+
+Node.js 24+, Rust stable (цель MSVC), MSVC Build Tools, WebView2.
+
+```powershell
+npm ci
+npm run tauri dev        # режим разработки
+npm run build:portable   # src-tauri\target\release\klipparkiv.exe
+npm run pack:portable    # release\klipparkiv-<версия>-win-x64.zip
+```
+
+Приложению нужны внешние бинарники, которых **нет** в репозитории. Положите их в
+`bin\` рядом с exe:
+
+```
+bin\yt-dlp.exe
+bin\ffmpeg.exe
+bin\ffprobe.exe
+```
+
+Проверки:
+
+```powershell
+npm run typecheck
+npm run test:run
+cargo test  --manifest-path src-tauri\Cargo.toml
+cargo clippy --manifest-path src-tauri\Cargo.toml --all-targets -- -D warnings
+```
+
+### Структура
+
+| Путь | Назначение |
+|---|---|
+| `src\` | фронтенд на React 19 + TypeScript |
+| `src-tauri\` | бэкенд на Rust: процессы, прогресс, библиотека на SQLite |
+| `scripts\` | упаковка portable-сборки и скриншоты |
+| `assets\screenshots\` | изображения для этого README |
+
+### Правовое
+
+Klipparkiv — только интерфейс: он запускает [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+(Unlicense) и [FFmpeg](https://ffmpeg.org/legal.html) (LGPL/GPL в зависимости от
+сборки). Скачивайте только тот контент, на который у вас есть права; соблюдайте
+условия сервисов и авторские права. Проект не связан с YouTube, Google, yt-dlp
+и FFmpeg.
+
+### Лицензия
+
+[MIT](LICENSE) © Klipparkiv contributors. Настройка и проверки описаны в
+[CONTRIBUTING.md](CONTRIBUTING.md).
