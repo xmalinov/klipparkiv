@@ -46,8 +46,19 @@ node scripts/check-version.mjs
 
 - TypeScript: strict, no `any` unless there is no reasonable alternative.
 - Rust: `cargo fmt` is the source of truth; keep command handlers small.
-- UI text is Russian, code and comments are English. Keep it that way.
+- UI strings live in `src/i18n/index.tsx`. Keep the `ru` and `en` dictionaries
+  in sync; code and comments are English.
+- User-facing claims (formats, supported systems, file sizes, download names)
+  must match the release. Update `README.md`, `README.txt` and the release notes
+  together when one of them changes.
+- Keep `SECURITY.md`, `PRIVACY.md` and `THIRD_PARTY_NOTICES.md` accurate when
+  you add a bundled binary or change network behaviour.
 - One logical change per commit. Describe *why* in the message, not *what*.
+
+## Security
+
+Do not report a vulnerability in a public issue. Follow [SECURITY.md](SECURITY.md)
+and use GitHub's private vulnerability reporting.
 
 ## Pull requests
 

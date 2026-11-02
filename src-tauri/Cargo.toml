@@ -1,7 +1,7 @@
 [package]
 name = "klipparkiv"
-version = "1.6.0"
-description = "Portable Windows GUI for yt-dlp: audio, video, clips and a library of downloads"
+version = "1.6.1"
+description = "Offline media library for backing tracks and lessons: audio, video, clips and playlists"
 authors = ["Klipparkiv contributors"]
 edition = "2024"
 default-run = "klipparkiv"

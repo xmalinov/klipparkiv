@@ -31,11 +31,28 @@ if (sections.length === 0) {
   process.exit(1);
 }
 
+const downloads = `## What to download / Что скачать
+
+| Platform | File |
+|---|---|
+| Windows 10/11 x64 | \`klipparkiv-${version}-win-x64.zip\` |
+| macOS Apple Silicon | \`klipparkiv-${version}-mac-arm64.dmg\` |
+| macOS Intel | \`klipparkiv-${version}-mac-x64.dmg\` |
+
+The standalone \`.exe\`, \`.app.tar.gz\`, \`.sig\` and \`update.json\` are update
+files, not first-install files. Не скачивайте отдельный \`.exe\`, \`.app.tar.gz\`,
+\`.sig\` или \`update.json\` для первой установки.
+
+---
+
+`;
+
 // English is first, Russian is last; keep both for the bilingual audience.
-const body =
+const notes =
   sections.length >= 2
     ? `## English\n\n${sections[0]}\n\n---\n\n## Русский\n\n${sections.at(-1)}`
     : sections[0];
+const body = `${downloads}${notes}`;
 
 writeFileSync(out, `${body}\n`);
 console.log(`release notes for ${version}: ${out} (${body.length} chars)`);

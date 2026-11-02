@@ -16,8 +16,15 @@ Terminal alternative:
   xattr -dr com.apple.quarantine /Applications/Klipparkiv.app
 
 Data location:
-  ~/Movies/Klipparkiv
+  Library and media: ~/Movies/Klipparkiv
+  Settings, updates, backups and logs: ~/Library/Application Support/Klipparkiv
+  WKWebView may keep its own cache under ~/Library.
 
-Updates are installed inside the app and do not require this confirmation
-again. If automatic replacement is not possible, the app downloads the DMG
-and asks you to drag it into Applications.
+License and notices:
+  see LICENSE.txt, THIRD_PARTY_NOTICES.md, PRIVACY.md, SECURITY.md and LICENSES/
+  in this DMG. The app bundle also carries a copy under Contents/Resources/licenses.
+
+Use Klipparkiv only for media you own or are allowed to save. Updates are
+installed inside the app and do not require this confirmation again. If
+automatic replacement is not possible, the app downloads the DMG and asks you
+to drag it into Applications.

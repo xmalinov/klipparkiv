@@ -18,6 +18,13 @@ if [[ ! -d "$APP" ]]; then
   exit 1
 fi
 
+mkdir -p "$APP/Contents/Resources/licenses"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/LICENSE.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
+cp "$ROOT/PRIVACY.md" "$APP/Contents/Resources/licenses/PRIVACY.md"
+cp "$ROOT/SECURITY.md" "$APP/Contents/Resources/licenses/SECURITY.md"
+cp -R "$ROOT/LICENSES" "$APP/Contents/Resources/licenses/LICENSES"
+
 bash "$HERE/sign-app.sh" "$APP"
 bash "$HERE/verify-app.sh" "$APP" "$VERSION"
 bash "$HERE/make-dmg.sh" "$APP" "$OUT/$PREFIX.dmg"

@@ -25,7 +25,8 @@ coverage
 /audio/
 /video/
 /dist-portable/
-/docs/
+/docs/*
+!/docs/README.md
 
 # Editor directories and files
 .vscode/*

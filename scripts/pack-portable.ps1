@@ -26,6 +26,11 @@ Copy-Item $exe (Join-Path $out "klipparkiv.exe")
 Copy-Item $helper (Join-Path $out "klipparkiv-updater.exe")
 Copy-Item $bin (Join-Path $out "bin") -Recurse
 Copy-Item (Join-Path $root "README.txt") (Join-Path $out "README.txt")
+Copy-Item (Join-Path $root "LICENSE") (Join-Path $out "LICENSE")
+Copy-Item (Join-Path $root "THIRD_PARTY_NOTICES.md") (Join-Path $out "THIRD_PARTY_NOTICES.md")
+Copy-Item (Join-Path $root "PRIVACY.md") (Join-Path $out "PRIVACY.md")
+Copy-Item (Join-Path $root "SECURITY.md") (Join-Path $out "SECURITY.md")
+Copy-Item (Join-Path $root "LICENSES") (Join-Path $out "LICENSES") -Recurse
 
 foreach ($dir in "data", "audio", "video") {
     New-Item -ItemType Directory -Path (Join-Path $out $dir) | Out-Null

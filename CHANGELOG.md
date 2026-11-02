@@ -10,6 +10,30 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.6.1] — 2026-11-02
+
+Documentation and release-hygiene release. No download or library behaviour
+changed.
+
+#### Changed
+
+- The README, `README.txt` and landing page now lead with the offline-library
+  use case and explain which release asset to download and how to start.
+- README and landing screenshots were replaced with English and Russian sets,
+  a neutral example path and original cover art.
+- Security, privacy and third-party notices are documented. `LICENSE`,
+  `THIRD_PARTY_NOTICES.md`, `PRIVACY.md` and `LICENSES/` are included in the
+  Windows zip and macOS DMG.
+- The app document starts with `lang="en"` before the saved interface language
+  is loaded.
+- macOS declares `minimumSystemVersion` 11.0 explicitly.
+
+#### Fixed
+
+- `CONTRIBUTING.md` no longer claims that UI text is Russian-only.
+- Removed unsupported "any site" and "QuickTime" claims; clarified portable data
+  locations and the WebView2 cache.
+
 ### [1.6.0] — 2026-11-02
 
 #### Added
@@ -106,6 +130,30 @@ First public release.
 
 ## Русский
 
+### [1.6.1] — 2026-11-02
+
+Релиз документации и юридической гигиены. Поведение загрузок и библиотеки не
+изменилось.
+
+#### Изменено
+
+- README, `README.txt` и лендинг теперь начинаются с задачи «офлайн-библиотека»
+  и объясняют, какой файл релиза скачивать и с чего начать.
+- Скриншоты в README и на лендинге заменены на английский и русский комплекты
+  с нейтральным примером пути и собственной обложкой.
+- Добавлены политики безопасности, конфиденциальности и уведомления о
+  сторонних компонентах. `LICENSE`, `THIRD_PARTY_NOTICES.md`, `PRIVACY.md` и
+  `LICENSES/` входят в Windows-zip и macOS-DMG.
+- Документ приложения стартует с `lang="en"` до загрузки сохранённого языка
+  интерфейса.
+- Для macOS явно указан `minimumSystemVersion` 11.0.
+
+#### Исправлено
+
+- `CONTRIBUTING.md` больше не утверждает, что текст интерфейса только русский.
+- Убраны неподтверждённые обещания «любой сайт» и «QuickTime»; уточнены
+  расположение данных в портативной сборке и кэш WebView2.
+
 ### [1.6.0] — 2026-11-02
 
 #### Добавлено
@@ -201,6 +249,7 @@ First public release.
 - Уведомление Windows по завершении пакета.
 - Портативная структура: настройки и индекс в `data\`, медиа в `audio\` и `video\`.
 
+[1.6.1]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.1
 [1.6.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.0
 [1.3.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.3.0
 [1.2.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.2.0

@@ -24,10 +24,11 @@ body:
     validations:
       required: true
   - type: input
-    id: windows
+    id: os
     attributes:
-      label: Windows version
-      placeholder: "Windows 11 23H2 x64"
+      label: Operating system
+      description: Windows or macOS, version and architecture.
+      placeholder: "Windows 11 23H2 x64 / macOS 15.1 arm64"
     validations:
       required: true
   - type: dropdown
@@ -71,7 +72,8 @@ body:
     attributes:
       label: Logs
       description: |
-        Files live in `data\` next to the executable. Remove anything private
+        Windows: files live in `data\` next to the executable. macOS: see
+        `~/Library/Application Support/Klipparkiv`. Remove anything private
         (tokens, cookies, personal paths) before pasting.
       render: text
     validations:

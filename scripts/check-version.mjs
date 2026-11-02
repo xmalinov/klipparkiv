@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Ensures package.json, package-lock.json, Cargo.toml, tauri.conf.json
-// and the release tag agree.
+// Ensures package.json, package-lock.json, Cargo.toml, tauri.conf.json,
+// README.txt and the release tag agree.
 // Usage: node scripts/check-version.mjs [--tag v1.3.0]
 
 import { readFileSync } from "node:fs";
@@ -10,6 +10,7 @@ const npmLock = JSON.parse(readFileSync("package-lock.json", "utf8"));
 const cargo = readFileSync("src-tauri/Cargo.toml", "utf8");
 const tauri = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
 const lock = readFileSync("src-tauri/Cargo.lock", "utf8");
+const readmeTxt = readFileSync("README.txt", "utf8");
 
 const match = cargo.match(/^\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m);
 if (!match) {
@@ -29,6 +30,12 @@ if (!lockVersion) {
   process.exit(1);
 }
 
+const readmeTxtVersion = readmeTxt.match(/^Klipparkiv\s+(\d+\.\d+\.\d+)/m)?.[1];
+if (!readmeTxtVersion) {
+  console.error("cannot find the version in README.txt");
+  process.exit(1);
+}
+
 const versions = {
   "package.json": pkg.version,
   "package-lock.json": npmLock.version,
@@ -36,6 +43,7 @@ const versions = {
   "Cargo.toml": match[1],
   "Cargo.lock": lockVersion,
   "tauri.conf.json": tauri.version,
+  "README.txt": readmeTxtVersion,
 };
 const unique = new Set(Object.values(versions));
 if (unique.size !== 1) {

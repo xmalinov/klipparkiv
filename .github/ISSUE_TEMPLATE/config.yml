@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Report a security issue
+    url: https://github.com/xmalinov/klipparkiv/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.
   - name: yt-dlp issues
     url: https://github.com/yt-dlp/yt-dlp/issues
     about: If a site stopped working, it is usually fixed upstream in yt-dlp first.
