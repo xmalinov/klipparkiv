@@ -1,8 +1,8 @@
 ﻿# Klipparkiv
 
-**Portable GUI for yt-dlp on Windows and macOS** — save audio, video and timecode
-clips, then keep them in a local library. No installer on Windows, no registry,
-no admin rights.
+**Portable GUI for yt-dlp on Windows and macOS** — save audio, video, timecode
+clips and playlists, then keep them in a local library. No installer on Windows,
+no registry, no admin rights.
 
 **[English](#english)** · **[Русский](#русский)**
 
@@ -18,6 +18,10 @@ no admin rights.
 ## English
 
 *klipparkiv* (Swedish) — an archive of clippings.
+
+**New in 1.6.0:** playlists with an item range, open-ended clips with range
+sliders, multi-link paste and drag & drop, playlist titles and “already there” /
+“partial” queue states. See [CHANGELOG.md](CHANGELOG.md).
 
 ### Features
 
@@ -157,6 +161,10 @@ for setup and checks.
 ## Русский
 
 *klipparkiv* (швед.) — архив вырезок.
+
+**Новое в 1.6.0:** плейлисты с диапазоном, клипы с открытыми границами и
+слайдерами, мультивставка и drag & drop, названия плейлистов и статусы очереди
+«Уже было» / «Частично». Подробнее — [CHANGELOG.md](CHANGELOG.md).
 
 ### Возможности
 
