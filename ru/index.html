@@ -3,9 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>klipparkiv, портативное приложение для yt-dlp на windows и macos</title>
-<meta name="description" content="Аудио, видео, клипы по таймкоду и плейлисты из любой ссылки yt-dlp, в одной библиотеке. Портативное приложение для Windows и нативное для macOS.">
-<link rel="alternate" hreflang="en" href="../">
+<title>Klipparkiv — бэкинг-треки и уроки офлайн</title>
+<meta name="description" content="Сохраняйте аудио, видео и клипы по таймкоду в локальную библиотеку на Windows и macOS. Без терминала и аккаунта.">
+<link rel="canonical" href="https://xmalinov.github.io/klipparkiv/ru/">
+<link rel="alternate" hreflang="en" href="https://xmalinov.github.io/klipparkiv/">
+<link rel="alternate" hreflang="ru" href="https://xmalinov.github.io/klipparkiv/ru/">
+<link rel="alternate" hreflang="x-default" href="https://xmalinov.github.io/klipparkiv/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Klipparkiv">
+<meta property="og:title" content="Klipparkiv — бэкинг-треки и уроки офлайн">
+<meta property="og:description" content="Сохраняйте аудио, видео и клипы по таймкоду в локальную библиотеку на Windows и macOS. Без терминала и аккаунта.">
+<meta property="og:url" content="https://xmalinov.github.io/klipparkiv/ru/">
+<meta property="og:image" content="https://xmalinov.github.io/klipparkiv/assets/library-ru.png">
+<meta property="og:image:width" content="1000">
+<meta property="og:image:height" content="700">
+<meta property="og:image:alt" content="Библиотека Klipparkiv с видеоуроком и бэкинг-треком">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Klipparkiv — бэкинг-треки и уроки офлайн">
+<meta name="twitter:description" content="Сохраняйте аудио, видео и клипы по таймкоду в локальную библиотеку на Windows и macOS.">
+<meta name="twitter:image" content="https://xmalinov.github.io/klipparkiv/assets/library-ru.png">
+<meta name="twitter:image:alt" content="Библиотека Klipparkiv с видеоуроком и бэкинг-треком">
+<meta name="theme-color" content="#101216">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../page.css">
 </head>
 <body>
@@ -18,11 +37,11 @@
       klipparkiv
     </a>
     <nav class="nav__links" aria-label="разделы">
-      <a href="#new">что нового</a>
+      <a href="#start">начать</a>
       <a href="#flow">что умеет</a>
       <a href="https://github.com/xmalinov/klipparkiv">github</a>
       <a href="../" class="lang" hreflang="en" lang="en" aria-label="read this page in english">en</a>
-      <a class="btn btn--quiet btn--small" href="#download">скачать</a>
+      <a class="btn btn--quiet btn--small" href="#start">скачать</a>
     </nav>
   </div>
 </header>
@@ -31,37 +50,56 @@
   <section class="hero">
     <div class="container hero__grid">
       <div>
-        <h1>Скачать, нарезать, сохранить</h1>
-        <p class="lead">yt-dlp без терминала: аудио, видео, клипы по таймкоду, плейлисты и библиотека — на Windows и macOS.</p>
+        <h1>Бэкинг-треки и уроки — офлайн</h1>
+        <p class="lead">Аудио, видео и клипы по таймкоду в локальной библиотеке на Windows и macOS. Без терминала и аккаунта.</p>
         <div class="actions">
-          <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Скачать для Windows</a>
-          <a class="btn btn--quiet" href="#macos">Скачать для macOS</a>
+          <a class="btn btn--primary" href="#start">Выбрать сборку</a>
+          <a class="btn btn--quiet" href="#macos">Для macOS</a>
         </div>
         <ul class="facts">
-          <li>Windows 10 и 11, x64</li>
+          <li>Windows 10/11, x64</li>
           <li>macOS 11+, Intel и Apple Silicon</li>
-          <li>~100–200 МБ</li>
-          <li>Без установки на Windows</li>
+          <li>~80–100 МБ скачать</li>
+          <li>~240 МБ на диске</li>
         </ul>
       </div>
       <figure class="shot">
-        <img src="../assets/download.png" width="1000" height="700" alt="экран загрузки: вставленная ссылка с названием и форматами, ниже очередь" fetchpriority="high" decoding="async">
+        <img src="../assets/download-ru.png" width="1000" height="700" alt="Экран загрузки Klipparkiv: поле ссылки, режимы «Аудио», «Видео», «Аудио + видео» и «Клип», выбор формата, папка назначения и пустая очередь" fetchpriority="high" decoding="async">
       </figure>
     </div>
   </section>
 
-  <section class="section" id="new">
-    <div class="container flow">
-      <div>
-        <h2>Новое в 1.6.0</h2>
-        <p>Плейлисты, клипы с открытыми границами, мультивставка и более понятная очередь — без лишнего шага в основном сценарии.</p>
+  <section class="section" id="start">
+    <div class="container">
+      <h2>Начните здесь</h2>
+      <div class="start-grid">
+        <div>
+          <h3>1. Скачайте нужный файл</h3>
+          <ul class="zip" aria-label="какой файл скачивать">
+            <li><b>Windows 10/11 x64</b><span>…-win-x64.zip</span></li>
+            <li><b>macOS Apple Silicon</b><span>…-mac-arm64.dmg</span></li>
+            <li><b>macOS Intel</b><span>…-mac-x64.dmg</span></li>
+          </ul>
+          <p class="note">Если не уверены, какой DMG нужен: <b>меню Apple → «Об этом Mac» → «Чип» или «Процессор»</b>.</p>
+          <p class="note">Не скачивайте для первой установки отдельный <code>.exe</code>, <code>.app.tar.gz</code>, <code>.sig</code> или <code>update.json</code> — это файлы обновления.</p>
+          <div class="actions">
+            <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Открыть последний релиз</a>
+            <a class="btn btn--quiet" href="https://github.com/xmalinov/klipparkiv/releases">Все релизы</a>
+          </div>
+        </div>
+        <div>
+          <h3>2. Установите</h3>
+          <p><b>Windows:</b> распакуйте папку целиком и запустите <code>klipparkiv.exe</code>. SmartScreen может спросить один раз: <b>«Подробнее» → «Выполнить»</b>. Папка должна быть доступна для записи.</p>
+          <p><b>macOS:</b> откройте DMG и перетащите Klipparkiv в Applications («Программы»). Сборка подписана ad-hoc, но не нотаризована. При первом запуске: <b>Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть»</b> или правый клик → <b>«Открыть»</b>.</p>
+          <h3>3. Пользуйтесь</h3>
+          <ol class="steps">
+            <li>Вставьте ссылку, которую поддерживает yt-dlp.</li>
+            <li>Проверьте предпросмотр и выберите «Аудио», «Видео», «Аудио + видео» или «Клип».</li>
+            <li>Укажите папку и нажмите <b>«Скачать»</b>.</li>
+            <li>Откройте <b>«Библиотеку»</b>, чтобы искать и открыть файл в системном плеере.</li>
+          </ol>
+        </div>
       </div>
-      <ul class="zip" aria-label="что нового в версии 1.6.0">
-        <li><b>Плейлисты</b><span>весь список или одно видео, с диапазоном</span></li>
-        <li><b>Границы клипа</b><span>с начала, до конца, весь ролик и слайдеры</span></li>
-        <li><b>Много ссылок</b><span>вставить список или перетащить .txt в окно</span></li>
-        <li><b>Очередь</b><span>названия, 2/42, «Уже было» и «Частично»</span></li>
-      </ul>
     </div>
   </section>
 
@@ -76,11 +114,11 @@
           </div>
           <div>
             <dt>Формат</dt>
-            <dd>MP3 128-320 кбит/с или MP4 H.264 480p-2160p, который открывается в QuickTime, можно оба файла сразу.</dd>
+            <dd>MP3 128–320 кбит/с или MP4 H.264/AAC 480p–2160p, если источник его отдаёт. Если H.264 нет, берётся лучший доступный поток, и некоторые плееры могут его не открыть.</dd>
           </div>
           <div>
             <dt>Клип</dt>
-            <dd>Нарезка по таймкоду, <code>00:01:30-00:05:00</code>, аудио или видео. Оставьте начало или конец пустым, чтобы резать до края; если длительность известна, появляются слайдеры.</dd>
+            <dd>Нарезка по таймкоду, <code>00:01:30-00:05:00</code>, аудио или видео. Оставьте начало или конец пустым, чтобы резать до края.</dd>
           </div>
           <div>
             <dt>Плейлист</dt>
@@ -88,32 +126,33 @@
           </div>
           <div>
             <dt>Ссылки</dt>
-            <dd>Вставьте несколько ссылок сразу или перетащите <code>.txt</code> в окно. Можно добавить все или оставить первую.</dd>
+            <dd>Вставьте несколько ссылок сразу или перетащите <code>.txt</code> в окно.</dd>
           </div>
           <div>
             <dt>Очередь</dt>
-            <dd>1-4 загрузки одновременно, с названиями, прогрессом плейлиста вроде <code>2/42</code>, паузой, продолжением и отменой.</dd>
+            <dd>До 4 загрузок одновременно, с названиями, прогрессом плейлиста вроде <code>2/42</code>, паузой, продолжением и отменой.</dd>
           </div>
           <div>
             <dt>Библиотека</dt>
-            <dd>Обложки, поиск, фильтры, открытие в системном плеере.</dd>
+            <dd>Обложки, поиск, фильтры, сортировка, открытие в системном плеере.</dd>
           </div>
           <div>
             <dt>Архив</dt>
-            <dd>Уже сохранённые элементы пропускаются при следующем запуске. У клипов вместо архива детерминированное имя, поэтому второй клип не блокируется.</dd>
+            <dd>Уже сохранённые элементы пропускаются при следующем запуске. У клипов вместо архива детерминированное имя.</dd>
           </div>
         </dl>
+        <p class="note">Встроенного плеера для занятий в текущей версии нет. Воспроизведение открывается в системном плеере; плеер для занятий — следующая крупная функция.</p>
       </div>
       <figure class="shot">
-        <img src="../assets/library.png" width="1000" height="700" alt="библиотека: сохранённые файлы с обложками, длительностью и размером, сверху поиск и фильтры" loading="lazy" decoding="async">
+        <img src="../assets/library-ru.png" width="1000" height="700" alt="Библиотека Klipparkiv: видеоурок по фингерстайлу и бэкинг-трек Am Blues с обложками, длительностью, поиском, фильтрами и счётчиком файлов" loading="lazy" decoding="async">
       </figure>
     </div>
   </section>
 
   <section class="band">
     <div class="container band__grid">
-      <h2>Windows 10 или 11, macOS 11 или новее</h2>
-      <p>На Windows WebView2 уже есть в системе. Приложению нужно около 250 МБ и папка с правом записи. В Windows настройки и индекс лежат в <code>data\</code>, медиа в <code>audio\</code> и <code>video\</code>; в macOS всё хранится в <code>~/Movies/Klipparkiv</code>. Для файлов больше 4 ГБ подойдёт exFAT или NTFS.</p>
+      <h2>Windows 10/11 или macOS 11+</h2>
+      <p>WebView2 обычно уже есть в Windows; если его нет, установите Evergreen Runtime. Приложению нужно около 240 МБ на диске и папка с правом записи. В Windows данные приложения лежат в <code>data\</code>, медиа в <code>audio\</code> и <code>video\</code>; WebView2 может держать свой кэш в <code>%LOCALAPPDATA%</code>. В macOS библиотека и медиа лежат в <code>~/Movies/Klipparkiv</code>, настройки и обновления — в <code>~/Library/Application Support/Klipparkiv</code>. Для файлов больше 4 ГБ в Windows используйте exFAT или NTFS; в macOS — APFS, HFS+ или exFAT.</p>
     </div>
   </section>
 
@@ -121,8 +160,9 @@
     <div class="container flow">
       <div>
         <h2>macOS</h2>
-        <p>Нативное <code>.app</code> для Intel и Apple Silicon, с yt-dlp, ffmpeg и ffprobe внутри бандла. Загрузки и библиотека лежат в <code>~/Movies/Klipparkiv</code>; настройки, обновления и backup — в <code>~/Library/Application Support/Klipparkiv</code>.</p>
-        <p>Сборка подписана ad-hoc, но не нотаризована Apple. При первом запуске: Системные настройки → Конфиденциальность и безопасность → <b>Открыть всё равно</b> (macOS 15+) или правый клик → <b>Открыть</b> (macOS 14 и старше). Обновления из приложения больше не спрашивают.</p>
+        <p>Нативное <code>.app</code> для Intel и Apple Silicon, с yt-dlp, ffmpeg и ffprobe внутри бандла. В DMG и в бандле есть лицензии и уведомления о конфиденциальности.</p>
+        <p>Сборка подписана ad-hoc, но не нотаризована Apple. При первом запуске: <b>Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть»</b> (macOS 15+) или правый клик → <b>«Открыть»</b> (macOS 14 и старше). Если macOS всё равно блокирует, выполните:</p>
+        <pre class="cmd"><code>xattr -dr com.apple.quarantine /Applications/Klipparkiv.app</code></pre>
         <div class="actions">
           <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Скачать для macOS</a>
           <a class="btn btn--quiet" href="https://github.com/xmalinov/klipparkiv/releases">Все релизы</a>
@@ -140,10 +180,10 @@
   <section class="close" id="download">
     <div class="container close__grid">
       <div>
-        <h2>Распаковать и запустить — или перетащить в Applications</h2>
-        <p>В архиве для Windows уже есть yt-dlp и ffmpeg, доустанавливать ничего не нужно. Сборка без подписи: SmartScreen спросит один раз, «Подробнее», затем «Выполнить». В macOS откройте DMG и перетащите Klipparkiv в Applications. Настройки и индекс лежат в <code>data\</code>, медиа в <code>audio\</code> и <code>video\</code>.</p>
+        <h2>Готовы попробовать?</h2>
+        <p>Скачайте zip для Windows или DMG для macOS. Внутри уже есть yt-dlp и ffmpeg, доустанавливать ничего не нужно. Первая загрузка — это одна ссылка, один режим и одна папка.</p>
         <div class="actions">
-          <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Скачать</a>
+          <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Открыть последний релиз</a>
           <a class="btn btn--quiet" href="https://github.com/xmalinov/klipparkiv">Исходники на GitHub</a>
         </div>
       </div>
@@ -152,6 +192,7 @@
         <li><b>bin\yt-dlp.exe</b><span>загрузчик</span></li>
         <li><b>bin\ffmpeg.exe</b><span>склейка и нарезка</span></li>
         <li><b>bin\ffprobe.exe</b><span>форматы и длительность</span></li>
+        <li><b>LICENSE, notices, LICENSES\</b><span>правовые файлы</span></li>
       </ul>
     </div>
   </section>
@@ -164,12 +205,16 @@
       <nav class="footer__links" aria-label="ссылки">
         <a href="https://github.com/xmalinov/klipparkiv">github</a>
         <a href="https://github.com/xmalinov/klipparkiv/releases">релизы</a>
+        <a href="https://github.com/xmalinov/klipparkiv/blob/main/CHANGELOG.md">изменения</a>
         <a href="https://github.com/xmalinov/klipparkiv/blob/main/LICENSE">лицензия MIT</a>
+        <a href="https://github.com/xmalinov/klipparkiv/blob/main/THIRD_PARTY_NOTICES.md">лицензии компонентов</a>
+        <a href="https://github.com/xmalinov/klipparkiv/blob/main/PRIVACY.md">конфиденциальность</a>
+        <a href="https://github.com/xmalinov/klipparkiv/blob/main/SECURITY.md">безопасность</a>
         <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>
         <a href="https://ffmpeg.org">ffmpeg</a>
       </nav>
     </div>
-    <p class="footer__legal">Не связан с YouTube, Google, yt-dlp и FFmpeg.</p>
+    <p class="footer__legal">Сохраняйте только те медиа, которые вам принадлежат или которые разрешено скачивать. Соблюдайте условия сервисов и авторские права. Klipparkiv не хранит контент и не связан с YouTube, Google, yt-dlp или FFmpeg. Сайт не использует аналитику и не ставит cookies.</p>
   </div>
 </footer>
 </body>

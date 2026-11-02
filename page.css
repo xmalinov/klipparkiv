@@ -72,6 +72,19 @@ code, .mono { font-family: var(--font-mono); font-size: 0.875em; }
 .section { padding-block: var(--space-9); }
 .section h2 { margin-bottom: var(--space-4); }
 
+/* ---- start here ---- */
+.start-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
+.start-grid h3 { margin-bottom: var(--space-3); }
+.start-grid h3 + p { margin-top: var(--space-3); }
+.start-grid p + h3 { margin-top: var(--space-6); }
+.start-grid .zip { margin-top: var(--space-3); }
+.start-grid .actions { margin-top: var(--space-4); }
+.note { margin-top: var(--space-3); font-size: 13px; color: var(--text-dim); }
+.steps { margin: var(--space-3) 0 0; padding-left: 1.25rem; color: var(--text-muted); font-size: 14px; }
+.steps li + li { margin-top: var(--space-2); }
+.cmd { margin: var(--space-3) 0 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); color: var(--text); overflow-x: auto; }
+.cmd code { font-size: 12px; }
+
 /* ---- flow rows ---- */
 .flow { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--space-8); align-items: start; }
 .flow__list { display: grid; margin: 0; }
@@ -107,7 +120,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.875em; }
 
 /* ---- responsive ---- */
 @media (max-width: 860px) {
-  .hero__grid, .flow, .band__grid, .close__grid { grid-template-columns: minmax(0, 1fr); }
+  .hero__grid, .flow, .band__grid, .close__grid, .start-grid { grid-template-columns: minmax(0, 1fr); }
   .hero { padding-block: var(--space-6) var(--space-8); }
   .section, .close { padding-block: var(--space-8); }
   .hero .shot { order: 2; }
