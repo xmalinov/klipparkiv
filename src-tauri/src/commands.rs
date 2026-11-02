@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::args::{self, ArgsRequest, ClipSpec, Mode, Quality};
+use crate::args::{self, ArgsRequest, ClipSpec, Mode, PlaylistSpec, Quality};
 use crate::i18n;
 use crate::metadata;
 use crate::paths::AppPaths;
@@ -20,18 +20,23 @@ use crate::settings::{Settings, SettingsStore};
 const STATE_QUEUED: &str = "queued";
 const STATE_RUNNING: &str = "running";
 const STATE_DONE: &str = "done";
+const STATE_SKIPPED: &str = "skipped";
+const STATE_PARTIAL: &str = "partial";
 const STATE_FAILED: &str = "failed";
 const STATE_CANCELED: &str = "canceled";
 
 /// Default parallel downloads. M5 makes it configurable from settings.
 pub const DEFAULT_CONCURRENCY: usize = 2;
 const MAX_BATCH_LINES: usize = 500;
+const MAX_PLAYLIST_ITEMS: u32 = 500;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskSnapshot {
     pub id: String,
     pub url: String,
+    /// Human title once known: from the preview card or from yt-dlp output.
+    pub title: Option<String>,
     pub mode: String,
     pub clip: bool,
     pub state: String,
@@ -39,6 +44,9 @@ pub struct TaskSnapshot {
     pub speed_bps: Option<f64>,
     pub eta_secs: Option<u64>,
     pub error: Option<String>,
+    pub playlist_index: Option<u32>,
+    pub playlist_count: Option<u32>,
+    pub output_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,6 +64,8 @@ struct ProgressEvent {
     percent: f32,
     speed_bps: Option<f64>,
     eta_secs: Option<u64>,
+    playlist_index: Option<u32>,
+    playlist_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +79,10 @@ struct Entry {
     snapshot: TaskSnapshot,
     pid: Option<u32>,
     canceled: bool,
+    /// yt-dlp reported that the target file already exists (or is in the archive).
+    skipped: bool,
+    /// Number of `ERROR:` lines; with `--ignore-errors` the exit code stays 0.
+    error_count: usize,
     argv: Vec<OsString>,
 }
 
@@ -112,6 +126,8 @@ impl TaskStore {
                 snapshot: snapshot.clone(),
                 pid: None,
                 canceled: false,
+                skipped: false,
+                error_count: 0,
                 argv,
             },
         );
@@ -167,10 +183,86 @@ impl TaskStore {
         let _ = self.update(id, |snapshot| {
             snapshot.state = state.to_string();
             snapshot.error = error;
-            if state == STATE_DONE {
+            if state == STATE_DONE || state == STATE_SKIPPED {
                 snapshot.percent = 100.0;
             }
         });
+    }
+
+    fn mark_skipped(&self, id: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(entry) = inner.tasks.get_mut(id) {
+            entry.skipped = true;
+        }
+    }
+
+    fn note_error(&self, id: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(entry) = inner.tasks.get_mut(id) {
+            entry.error_count += 1;
+        }
+    }
+
+    fn note_destination(&self, id: &str, path: &Path) {
+        let path_text = path.to_string_lossy().into_owned();
+        let title = crate::library::display_title(
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(path_text.as_str()),
+        );
+        let _ = self.update(id, |snapshot| {
+            snapshot.output_path = Some(path_text.clone());
+            if snapshot.title.is_none() && !title.trim().is_empty() {
+                snapshot.title = Some(title);
+            }
+        });
+    }
+
+    /// Maps the exit code and the collected flags to a user-visible state.
+    fn finish_completed(&self, id: &str) {
+        let (skipped, errors) = {
+            let inner = self.inner.lock().unwrap();
+            match inner.tasks.get(id) {
+                Some(entry) => (entry.skipped, entry.error_count),
+                None => (false, 0),
+            }
+        };
+        if skipped {
+            self.finish(id, STATE_SKIPPED, None);
+        } else if errors > 0 {
+            self.finish(
+                id,
+                STATE_PARTIAL,
+                Some(i18n::tf(
+                    || format!("ошибок в плейлисте: {errors}"),
+                    || format!("playlist errors: {errors}"),
+                )),
+            );
+        } else {
+            self.finish(id, STATE_DONE, None);
+        }
+    }
+
+    fn apply_progress(
+        &self,
+        id: &str,
+        percent: f32,
+        speed_bps: Option<f64>,
+        eta_secs: Option<u64>,
+        playlist_index: Option<u32>,
+        playlist_count: Option<u32>,
+    ) -> Option<TaskSnapshot> {
+        self.update(id, |snapshot| {
+            snapshot.percent = overall_percent(percent, playlist_index, playlist_count);
+            snapshot.speed_bps = speed_bps;
+            snapshot.eta_secs = eta_secs;
+            if playlist_index.is_some() {
+                snapshot.playlist_index = playlist_index;
+            }
+            if playlist_count.is_some() {
+                snapshot.playlist_count = playlist_count;
+            }
+        })
     }
 
     pub fn queue_state(&self) -> QueueState {
@@ -215,6 +307,10 @@ pub struct NewTask {
     pub out_dir: Option<String>,
     pub clip_start: Option<String>,
     pub clip_end: Option<String>,
+    pub title: Option<String>,
+    pub playlist: Option<bool>,
+    pub playlist_start: Option<u32>,
+    pub playlist_end: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,6 +319,18 @@ pub struct BatchRequest {
     pub path: String,
     pub mode: String,
     pub quality: Option<String>,
+    pub audio_kbps: Option<u32>,
+    pub out_dir: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinksRequest {
+    pub text: String,
+    pub mode: String,
+    pub quality: Option<String>,
+    pub audio_kbps: Option<u32>,
+    pub out_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,16 +380,92 @@ pub fn parse_audio_kbps(raw: Option<u32>) -> Result<u32, String> {
 
 pub fn parse_clip(start: Option<&str>, end: Option<&str>) -> Result<Option<ClipSpec>, String> {
     match (start.map(str::trim), end.map(str::trim)) {
-        (None, None) | (Some(""), Some("")) => Ok(None),
-        (Some(start), Some(end)) if !start.is_empty() && !end.is_empty() => {
-            ClipSpec::parse(start, end)
-                .map(Some)
-                .map_err(|error| error.to_string())
+        (None, None) => Ok(None),
+        (Some(""), Some("")) => Ok(None),
+        (Some(start), Some(end)) => ClipSpec::parse(start, end)
+            .map(Some)
+            .map_err(|error| error.to_string()),
+        (Some(start), None) => ClipSpec::parse(start, "")
+            .map(Some)
+            .map_err(|error| error.to_string()),
+        (None, Some(end)) => ClipSpec::parse("", end)
+            .map(Some)
+            .map_err(|error| error.to_string()),
+    }
+}
+
+pub fn parse_playlist(
+    enabled: Option<bool>,
+    start: Option<u32>,
+    end: Option<u32>,
+) -> Result<Option<PlaylistSpec>, String> {
+    if !enabled.unwrap_or(false) {
+        if start.is_some() || end.is_some() {
+            return Err(i18n::t(
+                "диапазон плейлиста указан без самого плейлиста",
+                "a playlist range was given without a playlist",
+            ));
         }
-        _ => Err(i18n::t(
-            "Укажите начало и конец клипа",
-            "Specify both clip start and end",
-        )),
+        return Ok(None);
+    }
+    if start == Some(0) || end == Some(0) {
+        return Err(i18n::t(
+            "номер видео в плейлисте начинается с 1",
+            "playlist item numbers start at 1",
+        ));
+    }
+    if let (Some(first), Some(last)) = (start, end)
+        && first > last
+    {
+        return Err(i18n::t(
+            "начало диапазона больше конца",
+            "the range start is greater than its end",
+        ));
+    }
+    if start.is_some_and(|value| value > MAX_PLAYLIST_ITEMS)
+        || end.is_some_and(|value| value > MAX_PLAYLIST_ITEMS)
+    {
+        return Err(i18n::tf(
+            || format!("за раз можно скачать не больше {MAX_PLAYLIST_ITEMS} видео"),
+            || format!("at most {MAX_PLAYLIST_ITEMS} videos can be downloaded at once"),
+        ));
+    }
+    Ok(Some(PlaylistSpec {
+        start,
+        // A hard cap keeps a 5000-item playlist from running for hours unnoticed.
+        end: Some(end.unwrap_or(MAX_PLAYLIST_ITEMS)),
+    }))
+}
+
+fn overall_percent(percent: f32, index: Option<u32>, count: Option<u32>) -> f32 {
+    match (index, count) {
+        (Some(index), Some(count)) if count > 1 && index >= 1 => {
+            let item = (percent / 100.0).clamp(0.0, 1.0);
+            (((index - 1) as f32 + item) / count as f32 * 100.0).clamp(0.0, 100.0)
+        }
+        _ => percent.clamp(0.0, 100.0),
+    }
+}
+
+fn resolve_out_dir(raw: Option<&str>) -> Result<Option<PathBuf>, String> {
+    match raw.map(str::trim).filter(|dir| !dir.is_empty()) {
+        Some(dir) => {
+            let path = PathBuf::from(dir);
+            if !path.is_absolute() {
+                return Err(i18n::t(
+                    "Папка назначения должна быть абсолютным путём",
+                    "The destination folder must be an absolute path",
+                ));
+            }
+            if !path.is_dir() {
+                return Err(i18n::t(
+                    "Папка назначения не найдена",
+                    "The destination folder was not found",
+                ));
+            }
+            Ok(Some(path))
+        }
+        None => Ok(None),
     }
 }
 
@@ -390,23 +574,26 @@ fn folder_error(error: std::io::Error) -> String {
     )
 }
 
-fn enqueue_for_mode(
-    app: &AppHandle,
-    url: &str,
+struct Job<'a> {
+    url: &'a str,
     mode: Mode,
     quality: Quality,
     audio_kbps: u32,
-    clip: Option<&ClipSpec>,
-    out_dir_override: Option<&Path>,
-) -> Result<TaskSnapshot, String> {
+    clip: Option<&'a ClipSpec>,
+    playlist: Option<PlaylistSpec>,
+    out_dir: Option<&'a Path>,
+    title: Option<&'a str>,
+}
+
+fn enqueue_job(app: &AppHandle, job: Job<'_>) -> Result<TaskSnapshot, String> {
     let paths = app.state::<AppPaths>();
     let store = app.state::<Arc<TaskStore>>();
     let settings = app.state::<SettingsStore>().get();
 
-    let out_dir = match out_dir_override {
+    let out_dir = match job.out_dir {
         Some(path) => path.to_path_buf(),
         None => {
-            let subdir = match mode {
+            let subdir = match job.mode {
                 Mode::Audio => &settings.audio_subdir,
                 Mode::Video => &settings.video_subdir,
             };
@@ -415,18 +602,21 @@ fn enqueue_for_mode(
     };
     std::fs::create_dir_all(&out_dir).map_err(folder_error)?;
 
-    let archive = paths.data().join(args::archive_file(mode, clip.is_some()));
+    let archive = paths
+        .data()
+        .join(args::archive_file(job.mode, job.clip.is_some()));
     std::fs::create_dir_all(paths.data()).map_err(folder_error)?;
 
     let thumbs = paths.thumbs();
     std::fs::create_dir_all(&thumbs).map_err(folder_error)?;
 
     let argv = args::build(&ArgsRequest {
-        url,
-        mode,
-        quality,
-        audio_kbps,
-        clip,
+        url: job.url,
+        mode: job.mode,
+        quality: job.quality,
+        audio_kbps: job.audio_kbps,
+        clip: job.clip,
+        playlist: job.playlist,
         out_dir: &out_dir,
         archive: &archive,
         ffmpeg_dir: &paths.bin(),
@@ -435,20 +625,29 @@ fn enqueue_for_mode(
     .map_err(|error| error.to_string())?;
 
     let id = store.next_id();
+    let title = job
+        .title
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
     let snapshot = store.insert(
         TaskSnapshot {
             id,
-            url: url.to_string(),
-            mode: match mode {
+            url: job.url.to_string(),
+            title,
+            mode: match job.mode {
                 Mode::Audio => "audio".to_string(),
                 Mode::Video => "video".to_string(),
             },
-            clip: clip.is_some(),
+            clip: job.clip.is_some(),
             state: STATE_QUEUED.to_string(),
             percent: 0.0,
             speed_bps: None,
             eta_secs: None,
             error: None,
+            playlist_index: None,
+            playlist_count: job.playlist.map(|_| 0),
+            output_path: None,
         },
         argv,
     );
@@ -512,17 +711,26 @@ fn task_finished(app: &AppHandle) {
     if queue.running == 0 && queue.queued == 0 {
         let tasks = app.state::<Arc<TaskStore>>().all();
         let done = tasks.iter().filter(|task| task.state == STATE_DONE).count();
+        let skipped = tasks
+            .iter()
+            .filter(|task| task.state == STATE_SKIPPED)
+            .count();
         let failed = tasks
             .iter()
-            .filter(|task| task.state == STATE_FAILED)
+            .filter(|task| task.state == STATE_FAILED || task.state == STATE_PARTIAL)
             .count();
-        if done + failed > 0 {
-            let body = if failed == 0 {
+        if done + skipped + failed > 0 {
+            let body = if failed == 0 && skipped == 0 {
                 i18n::tf(|| format!("Готово: {done}"), || format!("Done: {done}"))
+            } else if failed == 0 {
+                i18n::tf(
+                    || format!("Готово: {done}, уже было: {skipped}"),
+                    || format!("Done: {done}, already present: {skipped}"),
+                )
             } else {
                 i18n::tf(
-                    || format!("Готово: {done}, ошибок: {failed}"),
-                    || format!("Done: {done}, errors: {failed}"),
+                    || format!("Готово: {done}, уже было: {skipped}, ошибок: {failed}"),
+                    || format!("Done: {done}, already present: {skipped}, errors: {failed}"),
                 )
             };
             let _ = app
@@ -542,42 +750,29 @@ pub fn enqueue_task(app: AppHandle, task: NewTask) -> Result<Vec<TaskSnapshot>, 
     let audio_kbps = parse_audio_kbps(task.audio_kbps)?;
     let url = validate_url(&task.url)?;
     let clip = parse_clip(task.clip_start.as_deref(), task.clip_end.as_deref())?;
-
-    let out_dir = match task
-        .out_dir
-        .as_deref()
-        .map(str::trim)
-        .filter(|dir| !dir.is_empty())
-    {
-        Some(dir) => {
-            let path = PathBuf::from(dir);
-            if !path.is_absolute() {
-                return Err(i18n::t(
-                    "Папка назначения должна быть абсолютным путём",
-                    "The destination folder must be an absolute path",
-                ));
-            }
-            if !path.is_dir() {
-                return Err(i18n::t(
-                    "Папка назначения не найдена",
-                    "The destination folder was not found",
-                ));
-            }
-            Some(path)
-        }
-        None => None,
-    };
+    let playlist = parse_playlist(task.playlist, task.playlist_start, task.playlist_end)?;
+    if playlist.is_some() && clip.is_some() {
+        return Err(i18n::t(
+            "Клип можно вырезать только из одного видео, не из плейлиста",
+            "A clip can only be cut from a single video, not from a playlist",
+        ));
+    }
+    let out_dir = resolve_out_dir(task.out_dir.as_deref())?;
 
     let mut created = Vec::with_capacity(modes.len());
     for mode in modes {
-        created.push(enqueue_for_mode(
+        created.push(enqueue_job(
             &app,
-            &url,
-            mode,
-            quality,
-            audio_kbps,
-            clip.as_ref(),
-            out_dir.as_deref(),
+            Job {
+                url: &url,
+                mode,
+                quality,
+                audio_kbps,
+                clip: clip.as_ref(),
+                playlist,
+                out_dir: out_dir.as_deref(),
+                title: task.title.as_deref(),
+            },
         )?);
     }
 
@@ -586,37 +781,75 @@ pub fn enqueue_task(app: AppHandle, task: NewTask) -> Result<Vec<TaskSnapshot>, 
     Ok(created)
 }
 
+fn enqueue_text(
+    app: &AppHandle,
+    text: &str,
+    mode: &str,
+    quality: Option<&str>,
+    audio_kbps: Option<u32>,
+    out_dir: Option<&str>,
+) -> Result<Vec<TaskSnapshot>, String> {
+    let modes = parse_modes(mode)?;
+    let quality = parse_quality(quality)?;
+    let audio_kbps = parse_audio_kbps(audio_kbps)?;
+    let out_dir = resolve_out_dir(out_dir)?;
+    let entries = parse_list(text)?;
+
+    let mut created = Vec::new();
+    for entry in &entries {
+        for &mode in &modes {
+            created.push(enqueue_job(
+                app,
+                Job {
+                    url: &entry.url,
+                    mode,
+                    quality,
+                    audio_kbps,
+                    clip: entry.clip.as_ref(),
+                    playlist: None,
+                    out_dir: out_dir.as_deref(),
+                    title: None,
+                },
+            )?);
+        }
+    }
+
+    emit_queue(app);
+    pump(app);
+    Ok(created)
+}
+
 #[tauri::command]
 pub fn enqueue_batch(app: AppHandle, request: BatchRequest) -> Result<Vec<TaskSnapshot>, String> {
-    let modes = parse_modes(&request.mode)?;
-    let quality = parse_quality(request.quality.as_deref())?;
-
     let text = std::fs::read(&request.path).map_err(|error| {
         i18n::tf(
             || format!("не удалось прочитать файл: {error}"),
             || format!("could not read the file: {error}"),
         )
     })?;
-    let entries = parse_list(&String::from_utf8_lossy(&text))?;
+    let text = String::from_utf8_lossy(&text);
+    enqueue_text(
+        &app,
+        &text,
+        &request.mode,
+        request.quality.as_deref(),
+        request.audio_kbps,
+        request.out_dir.as_deref(),
+    )
+}
 
-    let mut created = Vec::new();
-    for entry in &entries {
-        for &mode in &modes {
-            created.push(enqueue_for_mode(
-                &app,
-                &entry.url,
-                mode,
-                quality,
-                320,
-                entry.clip.as_ref(),
-                None,
-            )?);
-        }
-    }
-
-    emit_queue(&app);
-    pump(&app);
-    Ok(created)
+/// Accepts a list pasted from the clipboard (one link per line, optional
+/// `HH:MM:SS-HH:MM:SS` range) without requiring a `.txt` file.
+#[tauri::command]
+pub fn enqueue_links(app: AppHandle, request: LinksRequest) -> Result<Vec<TaskSnapshot>, String> {
+    enqueue_text(
+        &app,
+        &request.text,
+        &request.mode,
+        request.quality.as_deref(),
+        request.audio_kbps,
+        request.out_dir.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -731,7 +964,7 @@ async fn run_task(app: AppHandle, id: String, exe: PathBuf, argv: Vec<OsString>)
     if canceled {
         store.finish(&id, STATE_CANCELED, None);
     } else if matches!(&status, Ok(s) if s.success()) {
-        store.finish(&id, STATE_DONE, None);
+        store.finish_completed(&id);
     } else {
         let reason = stderr_tail
             .lock()
@@ -760,21 +993,32 @@ async fn read_stdout(
     let mut lines = BufReader::new(stream).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(parsed) = progress::parse_line(&line) {
-            let _ = store.update(&id, |snapshot| {
-                snapshot.percent = parsed.percent;
-                snapshot.speed_bps = parsed.speed_bps;
-                snapshot.eta_secs = parsed.eta_secs;
-            });
+            let snapshot = store.apply_progress(
+                &id,
+                parsed.percent,
+                parsed.speed_bps,
+                parsed.eta_secs,
+                parsed.playlist_index,
+                parsed.playlist_count,
+            );
             let _ = app.emit(
                 "task://progress",
                 &ProgressEvent {
                     id: id.clone(),
-                    percent: parsed.percent,
+                    percent: snapshot.as_ref().map_or(parsed.percent, |s| s.percent),
                     speed_bps: parsed.speed_bps,
                     eta_secs: parsed.eta_secs,
+                    playlist_index: parsed.playlist_index,
+                    playlist_count: parsed.playlist_count,
                 },
             );
         } else {
+            if let Some(path) = downloaded_path(&line) {
+                store.note_destination(&id, &path);
+            }
+            if is_skip_line(&line) {
+                store.mark_skipped(&id);
+            }
             let _ = app.emit(
                 "task://log",
                 &LogEvent {
@@ -786,9 +1030,28 @@ async fn read_stdout(
     }
 }
 
+fn downloaded_path(line: &str) -> Option<PathBuf> {
+    let line = line.trim();
+    let rest = line.strip_prefix("[download] Destination: ").or_else(|| {
+        line.strip_prefix("[download] ")?
+            .strip_suffix(" has already been downloaded")
+    })?;
+    if rest.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(rest))
+    }
+}
+
+fn is_skip_line(line: &str) -> bool {
+    let line = line.trim();
+    line.ends_with("has already been downloaded")
+        || line.contains("has already been recorded in the archive")
+}
+
 async fn read_stderr(
     app: AppHandle,
-    _store: Arc<TaskStore>,
+    store: Arc<TaskStore>,
     id: String,
     stream: tokio::process::ChildStderr,
     tail: Arc<Mutex<VecDeque<String>>>,
@@ -801,6 +1064,9 @@ async fn read_stderr(
                 buffer.pop_front();
             }
             buffer.push_back(line.clone());
+        }
+        if line.contains("ERROR:") {
+            store.note_error(&id);
         }
         let _ = app.emit(
             "task://log",
@@ -963,8 +1229,64 @@ mod tests {
 
         assert!(parse_clip(None, None).unwrap().is_none());
         assert!(parse_clip(Some(""), Some("")).unwrap().is_none());
-        assert!(parse_clip(Some("1:30"), None).is_err());
+
+        let to_end = parse_clip(Some("1:30"), None).unwrap().unwrap();
+        assert_eq!(to_end.end, "inf");
+
+        let from_start = parse_clip(None, Some("2:00")).unwrap().unwrap();
+        assert_eq!(from_start.start, "00:00:00");
+
         assert!(parse_clip(Some("bad"), Some("2:00")).is_err());
+    }
+
+    #[test]
+    fn parses_playlist_switch_and_range() {
+        assert!(parse_playlist(None, None, None).unwrap().is_none());
+        assert!(parse_playlist(Some(false), None, None).unwrap().is_none());
+        assert!(parse_playlist(Some(false), Some(1), None).is_err());
+
+        let all = parse_playlist(Some(true), None, None).unwrap().unwrap();
+        assert_eq!(all.start, None);
+        assert_eq!(all.end, Some(MAX_PLAYLIST_ITEMS));
+
+        let range = parse_playlist(Some(true), Some(2), Some(10))
+            .unwrap()
+            .unwrap();
+        assert_eq!(range.start, Some(2));
+        assert_eq!(range.end, Some(10));
+
+        assert!(parse_playlist(Some(true), Some(0), None).is_err());
+        assert!(parse_playlist(Some(true), Some(5), Some(3)).is_err());
+        assert!(parse_playlist(Some(true), Some(1), Some(MAX_PLAYLIST_ITEMS + 1)).is_err());
+    }
+
+    #[test]
+    fn computes_overall_playlist_progress() {
+        assert_eq!(overall_percent(45.0, None, None), 45.0);
+        assert_eq!(overall_percent(50.0, Some(1), Some(4)), 12.5);
+        assert_eq!(overall_percent(50.0, Some(2), Some(4)), 37.5);
+        assert_eq!(overall_percent(100.0, Some(4), Some(4)), 100.0);
+        assert_eq!(overall_percent(120.0, Some(1), Some(1)), 100.0);
+    }
+
+    #[test]
+    fn recognizes_download_output_lines() {
+        assert_eq!(
+            downloaded_path("[download] Destination: C:\\media\\a.mp3"),
+            Some(PathBuf::from(r"C:\media\a.mp3"))
+        );
+        assert_eq!(
+            downloaded_path("[download] C:\\media\\a.mp3 has already been downloaded"),
+            Some(PathBuf::from(r"C:\media\a.mp3"))
+        );
+        assert_eq!(downloaded_path("[download] 45.2% of 4MiB"), None);
+        assert!(is_skip_line(
+            "[download] C:\\media\\a.mp3 has already been downloaded"
+        ));
+        assert!(is_skip_line(
+            "[youtube] abc: has already been recorded in the archive"
+        ));
+        assert!(!is_skip_line("[download] Destination: C:\\media\\a.mp3"));
     }
 
     #[test]
@@ -1008,6 +1330,7 @@ https://youtu.be/b 00:01:30-00:05:00
             TaskSnapshot {
                 id: store.next_id(),
                 url: "https://example.com".into(),
+                title: None,
                 mode: "audio".into(),
                 clip: false,
                 state: STATE_QUEUED.into(),
@@ -1015,6 +1338,9 @@ https://youtu.be/b 00:01:30-00:05:00
                 speed_bps: None,
                 eta_secs: None,
                 error: None,
+                playlist_index: None,
+                playlist_count: None,
+                output_path: None,
             },
             Vec::new(),
         );
@@ -1037,6 +1363,7 @@ https://youtu.be/b 00:01:30-00:05:00
             TaskSnapshot {
                 id: store.next_id(),
                 url: "https://example.com/1".into(),
+                title: None,
                 mode: "audio".into(),
                 clip: false,
                 state: STATE_QUEUED.into(),
@@ -1044,6 +1371,9 @@ https://youtu.be/b 00:01:30-00:05:00
                 speed_bps: None,
                 eta_secs: None,
                 error: None,
+                playlist_index: None,
+                playlist_count: None,
+                output_path: None,
             },
             Vec::new(),
         );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getSettings } from "../../api/settings";
 import { useI18n, type Translate } from "../../i18n";
@@ -6,12 +6,15 @@ import {
   applyProgress,
   cancelTask,
   enqueueBatch,
+  enqueueLinks,
   enqueueTask,
   formatDuration,
   formatEta,
   formatSpeed,
+  formatTimecode,
   formatUploadDate,
   formatViews,
+  parseTimecode,
   pauseQueue,
   probeMetadata,
   resumeQueue,
@@ -37,6 +40,11 @@ const MODES: {
   { id: "both", labelKey: "download.mode.both" },
   { id: "clip", labelKey: "download.mode.clip" },
 ];
+
+/** Matches `MAX_PLAYLIST_ITEMS` in the backend. */
+const MAX_PLAYLIST_ITEMS = 500;
+
+type PlaylistChoice = "video" | "all";
 
 function modeHint(
   mode: DownloadMode,
@@ -64,10 +72,42 @@ function modeHint(
   }
 }
 
-function taskLabel(task: TaskSnapshot, t: Translate): string {
+/**
+ * `watch?...&list=...` usually means "this video", while a bare
+ * `/playlist?list=...` link means the whole list.
+ */
+function defaultPlaylistChoice(url: string): PlaylistChoice {
+  try {
+    return new URL(url).pathname.startsWith("/playlist") ? "all" : "video";
+  } catch {
+    return "video";
+  }
+}
+
+function firstLink(text: string): string {
+  return (
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^https?:\/\//.test(line)) ?? ""
+  );
+}
+
+function taskSubtitle(task: TaskSnapshot, t: Translate): string {
   const base =
     task.mode === "audio" ? t("download.task.audio") : t("download.task.video");
-  return task.clip ? t("download.task.clip", { base }) : base;
+  const parts = [task.clip ? t("download.task.clip", { base }) : base];
+  if (task.playlistCount !== null) {
+    parts.push(
+      task.playlistIndex !== null
+        ? t("download.queuePlaylist", {
+            index: task.playlistIndex,
+            count: task.playlistCount || "?",
+          })
+        : t("download.queuePlaylistUnknown"),
+    );
+  }
+  return parts.join(" · ");
 }
 
 export default function DownloadScreen({ root }: { root?: string }) {
@@ -85,6 +125,14 @@ export default function DownloadScreen({ root }: { root?: string }) {
   const [meta, setMeta] = useState<VideoInfo | null>(null);
   const [probing, setProbing] = useState(false);
   const [metaError, setMetaError] = useState<string | null>(null);
+  const [playlistChoice, setPlaylistChoice] =
+    useState<PlaylistChoice>("video");
+  const [playlistStart, setPlaylistStart] = useState("");
+  const [playlistEnd, setPlaylistEnd] = useState("");
+  const [listOpen, setListOpen] = useState(false);
+  const [listText, setListText] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
   const [queue, setQueue] = useState<QueueState>({
     paused: false,
@@ -132,6 +180,9 @@ export default function DownloadScreen({ root }: { root?: string }) {
     const trimmed = url.trim();
     setMeta(null);
     setMetaError(null);
+    setPlaylistChoice(defaultPlaylistChoice(trimmed));
+    setPlaylistStart("");
+    setPlaylistEnd("");
     if (!/^https?:\/\//.test(trimmed)) {
       setProbing(false);
       return;
@@ -158,11 +209,8 @@ export default function DownloadScreen({ root }: { root?: string }) {
     };
   }, [url]);
 
-  const clipReady =
-    mode !== "clip" ||
-    (clipStart.trim().length > 0 && clipEnd.trim().length > 0);
   const isClip = mode === "clip";
-  const effectiveMode = isClip ? clipKind : mode;
+  const effectiveMode: DownloadMode = isClip ? clipKind : mode;
   const wantsVideo = effectiveMode === "video" || effectiveMode === "both";
   const wantsAudio = effectiveMode === "audio" || effectiveMode === "both";
   const pathSeparator = navigator.userAgent.includes("Mac") ? "/" : "\\";
@@ -174,7 +222,70 @@ export default function DownloadScreen({ root }: { root?: string }) {
       : `${root ?? ""}\\${defaultSubdir}`);
   const outsideRoot =
     outDir !== null && root !== undefined && !outDir.toLowerCase().startsWith(root.toLowerCase());
-  const canSubmit = url.trim().length > 0 && clipReady && !busy;
+
+  const clipStartSecs = parseTimecode(clipStart);
+  const clipEndSecs = parseTimecode(clipEnd);
+  const clipStartInvalid =
+    isClip && clipStart.trim() !== "" && clipStartSecs === null;
+  const clipEndInvalid = isClip && clipEnd.trim() !== "" && clipEndSecs === null;
+  const clipOrderInvalid =
+    isClip &&
+    clipStartSecs !== null &&
+    clipEndSecs !== null &&
+    clipStartSecs >= clipEndSecs;
+  const clipError =
+    clipStartInvalid || clipEndInvalid
+      ? t("download.clipInvalid")
+      : clipOrderInvalid
+        ? t("download.clipOrder")
+        : null;
+
+  const playlistInfo = meta?.kind === "playlist" ? meta : null;
+  const playlistTotal = playlistInfo?.playlistCount ?? 0;
+  // A bare `/playlist?list=` link is a playlist even before the probe returns,
+  // so a quick Enter cannot silently download only the first video.
+  const urlLooksLikePlaylist = defaultPlaylistChoice(url.trim()) === "all";
+  const showPlaylistChoice = playlistInfo !== null || urlLooksLikePlaylist;
+  const playlistAll = playlistChoice === "all" && !isClip;
+
+  const rangeStart = playlistStart.trim() ? Number(playlistStart) : null;
+  const rangeEnd = playlistEnd.trim() ? Number(playlistEnd) : null;
+  const rangeInvalid =
+    (rangeStart !== null &&
+      (!Number.isInteger(rangeStart) ||
+        rangeStart < 1 ||
+        rangeStart > MAX_PLAYLIST_ITEMS)) ||
+    (rangeEnd !== null &&
+      (!Number.isInteger(rangeEnd) ||
+        rangeEnd < 1 ||
+        rangeEnd > MAX_PLAYLIST_ITEMS)) ||
+    (rangeStart !== null && rangeEnd !== null && rangeStart > rangeEnd);
+  const playlistError = playlistAll && rangeInvalid;
+
+  const duration =
+    meta?.kind === "video" && meta.durationSecs !== null
+      ? Math.floor(meta.durationSecs)
+      : null;
+  const clipBeyondEnd =
+    isClip &&
+    duration !== null &&
+    clipEndSecs !== null &&
+    clipEndSecs > duration;
+
+  let clipHint: string | null = null;
+  if (isClip && duration !== null) {
+    const start = clipStart.trim() ? clipStartSecs : 0;
+    const end = clipEnd.trim() ? clipEndSecs : duration;
+    if (start !== null && end !== null && end > start) {
+      const length = formatDuration(end - start);
+      clipHint = clipEnd.trim()
+        ? t("download.clipLength", { length })
+        : t("download.clipToEndHint", { length });
+    }
+  }
+
+  const canSubmit =
+    url.trim().length > 0 && !busy && !clipError && !playlistError;
 
   async function pickDestination() {
     try {
@@ -192,22 +303,87 @@ export default function DownloadScreen({ root }: { root?: string }) {
     try {
       const created = await enqueueTask({
         url: url.trim(),
-        mode: isClip ? clipKind : mode,
+        mode: effectiveMode,
         quality: wantsVideo ? quality : undefined,
         audioKbps: wantsAudio ? audioKbps : undefined,
         outDir: outDir ?? undefined,
-        clipStart: isClip ? clipStart.trim() : undefined,
-        clipEnd: isClip ? clipEnd.trim() : undefined,
+        clipStart: isClip && clipStart.trim() ? clipStart.trim() : undefined,
+        clipEnd: isClip && clipEnd.trim() ? clipEnd.trim() : undefined,
+        title:
+          meta && (meta.kind === "video" || playlistAll)
+            ? meta.title
+            : undefined,
+        playlist: playlistAll ? true : undefined,
+        playlistStart:
+          playlistAll && rangeStart !== null ? rangeStart : undefined,
+        playlistEnd: playlistAll && rangeEnd !== null ? rangeEnd : undefined,
       });
       setTasks((current) => created.reduce(upsertTask, current));
       setUrl("");
-      setClipStart("");
-      setClipEnd("");
     } catch (cause) {
       setError(String(cause));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitList(text: string) {
+    if (!text.trim()) {
+      setError(t("download.linksEmpty"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await enqueueLinks({
+        text,
+        mode: effectiveMode,
+        quality: wantsVideo ? quality : undefined,
+        audioKbps: wantsAudio ? audioKbps : undefined,
+        outDir: outDir ?? undefined,
+      });
+      setTasks((current) => created.reduce(upsertTask, current));
+      setListText("");
+      setListOpen(false);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length > 0) {
+      const supported = files.filter(
+        (file) =>
+          file.name.toLowerCase().endsWith(".txt") ||
+          file.type.startsWith("text/"),
+      );
+      if (supported.length === 0) {
+        setError(t("download.dropUnsupported"));
+        return;
+      }
+      try {
+        const parts = await Promise.all(supported.map((file) => file.text()));
+        const text = parts.join("\n").trim();
+        if (!text) {
+          setError(t("download.linksEmpty"));
+          return;
+        }
+        await submitList(text);
+      } catch (cause) {
+        setError(String(cause));
+      }
+      return;
+    }
+
+    const text = event.dataTransfer.getData("text/plain");
+    if (text.trim()) await submitList(text);
   }
 
   async function paste() {
@@ -237,8 +413,10 @@ export default function DownloadScreen({ root }: { root?: string }) {
       if (!selected || Array.isArray(selected)) return;
       const created = await enqueueBatch({
         path: selected,
-        mode: isClip ? clipKind : mode,
+        mode: effectiveMode,
         quality: wantsVideo ? quality : undefined,
+        audioKbps: wantsAudio ? audioKbps : undefined,
+        outDir: outDir ?? undefined,
       });
       setTasks((current) => created.reduce(upsertTask, current));
     } catch (cause) {
@@ -246,8 +424,45 @@ export default function DownloadScreen({ root }: { root?: string }) {
     }
   }
 
+  const sliderMax = duration !== null ? Math.max(0, duration) : 0;
+  const sliderStart =
+    duration !== null
+      ? Math.min(duration, clipStart.trim() ? (clipStartSecs ?? 0) : 0)
+      : 0;
+  const sliderEnd =
+    duration !== null
+      ? Math.min(
+          duration,
+          clipEnd.trim() ? (clipEndSecs ?? duration) : duration,
+        )
+      : 0;
+
   return (
-    <div className="download">
+    <div
+      className={dragging ? "download dragging" : "download"}
+      onDragEnter={(event) => {
+        event.preventDefault();
+        dragDepth.current += 1;
+        setDragging(true);
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+      }}
+      onDragLeave={() => {
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) {
+          dragDepth.current = 0;
+          setDragging(false);
+        }
+      }}
+      onDrop={handleDrop}
+    >
+      {dragging && (
+        <div className="drop-overlay" aria-hidden="true">
+          <span>{t("download.dropActive")}</span>
+        </div>
+      )}
+
       <div className="url-row">
         <input
           className={error ? "field input invalid" : "field input"}
@@ -333,52 +548,205 @@ export default function DownloadScreen({ root }: { root?: string }) {
         <p className="hint">
           {modeHint(mode, quality, clipKind, audioKbps, t)}
         </p>
-        <button type="button" className="link-btn" onClick={pickBatch}>
-          {t("download.batch")}
-        </button>
+        <span className="hint-actions">
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => setListOpen((open) => !open)}
+          >
+            {t("download.linksPanel")}
+          </button>
+          <button type="button" className="link-btn" onClick={pickBatch}>
+            {t("download.batch")}
+          </button>
+        </span>
       </div>
 
-      {mode === "clip" && (
-        <div className="clip-row">
-          <div className="clip-kind" role="group" aria-label={t("download.clipKind")}>
+      {listOpen && (
+        <div className="list-panel">
+          <textarea
+            className="field list-text"
+            value={listText}
+            onChange={(event) => setListText(event.currentTarget.value)}
+            placeholder={t("download.linksPlaceholder")}
+            aria-label={t("download.linksPanel")}
+            rows={4}
+            spellCheck={false}
+          />
+          <div className="list-actions">
             <button
               type="button"
-              className={clipKind === "audio" ? "chip active" : "chip"}
-              onClick={() => setClipKind("audio")}
+              className="btn primary"
+              disabled={!listText.trim() || busy}
+              onClick={() => submitList(listText)}
             >
-              {t("common.audio")}
+              {t("download.linksAddAll")}
             </button>
             <button
               type="button"
-              className={clipKind === "video" ? "chip active" : "chip"}
-              onClick={() => setClipKind("video")}
+              className="btn btn-ghost"
+              disabled={!firstLink(listText)}
+              onClick={() => {
+                const link = firstLink(listText);
+                if (link) {
+                  setUrl(link);
+                  setListOpen(false);
+                }
+              }}
             >
-              {t("common.video")}
+              {t("download.linksFirst")}
             </button>
+            <span className="hint">{t("download.dropHint")}</span>
           </div>
-          <label>
-            {t("download.clipStart")}
-            <input
-              className="field clip"
-              value={clipStart}
-              onChange={(event) => setClipStart(event.currentTarget.value)}
-              placeholder="00:01:30"
-              inputMode="numeric"
-              aria-label={t("download.clipStartLabel")}
-            />
-          </label>
-          <span className="clip-sep">—</span>
-          <label>
-            {t("download.clipEnd")}
-            <input
-              className="field clip"
-              value={clipEnd}
-              onChange={(event) => setClipEnd(event.currentTarget.value)}
-              placeholder="00:05:00"
-              inputMode="numeric"
-              aria-label={t("download.clipEndLabel")}
-            />
-          </label>
+        </div>
+      )}
+
+      {mode === "clip" && (
+        <div className="clip-block">
+          <div className="clip-row">
+            <div className="clip-kind" role="group" aria-label={t("download.clipKind")}>
+              <button
+                type="button"
+                className={effectiveMode === "audio" ? "chip active" : "chip"}
+                onClick={() => setClipKind("audio")}
+              >
+                {t("common.audio")}
+              </button>
+              <button
+                type="button"
+                className={effectiveMode === "video" ? "chip active" : "chip"}
+                onClick={() => setClipKind("video")}
+              >
+                {t("common.video")}
+              </button>
+            </div>
+            <label>
+              {t("download.clipStart")}
+              <input
+                className={
+                  clipStartInvalid ? "field clip invalid" : "field clip"
+                }
+                value={clipStart}
+                onChange={(event) => setClipStart(event.currentTarget.value)}
+                placeholder="00:01:30"
+                inputMode="numeric"
+                aria-label={t("download.clipStartLabel")}
+              />
+            </label>
+            <span className="clip-sep">—</span>
+            <label>
+              {t("download.clipEnd")}
+              <input
+                className={clipEndInvalid ? "field clip invalid" : "field clip"}
+                value={clipEnd}
+                onChange={(event) => setClipEnd(event.currentTarget.value)}
+                placeholder="00:05:00"
+                inputMode="numeric"
+                aria-label={t("download.clipEndLabel")}
+              />
+            </label>
+            <div className="clip-kind" role="group" aria-label={t("download.clipRange")}>
+              <button
+                type="button"
+                className={!clipStart.trim() ? "chip active" : "chip"}
+                onClick={() => setClipStart("")}
+              >
+                {t("download.clipFromStart")}
+              </button>
+              <button
+                type="button"
+                className={!clipEnd.trim() ? "chip active" : "chip"}
+                onClick={() => setClipEnd("")}
+              >
+                {t("download.clipToEnd")}
+              </button>
+              <button
+                type="button"
+                className={
+                  !clipStart.trim() && !clipEnd.trim() ? "chip active" : "chip"
+                }
+                onClick={() => {
+                  setClipStart("");
+                  setClipEnd("");
+                }}
+              >
+                {t("download.clipWhole")}
+              </button>
+            </div>
+            {(clipStart.trim() || clipEnd.trim()) && (
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setClipStart("");
+                  setClipEnd("");
+                }}
+              >
+                {t("download.clipReset")}
+              </button>
+            )}
+          </div>
+
+          {duration !== null && (
+            <div
+              className="slider-row"
+              role="group"
+              aria-label={t("download.clipSlider")}
+            >
+              <span className="mono">{formatTimecode(sliderStart)}</span>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, sliderMax - 1)}
+                step={1}
+                value={sliderStart}
+                aria-label={t("download.clipStartSlider")}
+                onChange={(event) => {
+                  const value = Number(event.currentTarget.value);
+                  setClipStart(formatTimecode(value));
+                  const currentEnd = clipEnd.trim()
+                    ? (clipEndSecs ?? duration)
+                    : duration;
+                  if (currentEnd <= value && value < duration) {
+                    setClipEnd(formatTimecode(value + 1));
+                  }
+                }}
+              />
+              <input
+                type="range"
+                min={1}
+                max={sliderMax}
+                step={1}
+                value={sliderEnd}
+                aria-label={t("download.clipEndSlider")}
+                onChange={(event) => {
+                  const value = Number(event.currentTarget.value);
+                  setClipEnd(formatTimecode(value));
+                  const currentStart = clipStart.trim()
+                    ? (clipStartSecs ?? 0)
+                    : 0;
+                  if (currentStart >= value) {
+                    setClipStart(formatTimecode(Math.max(0, value - 1)));
+                  }
+                }}
+              />
+              <span className="mono">{formatTimecode(sliderEnd)}</span>
+            </div>
+          )}
+
+          {clipError && (
+            <p className="field-error" role="alert">
+              {clipError}
+            </p>
+          )}
+          {clipBeyondEnd && duration !== null && (
+            <p className="hint warning">
+              {t("download.clipBeyondEnd", {
+                duration: formatDuration(duration),
+              })}
+            </p>
+          )}
+          {clipHint && <p className="hint">{clipHint}</p>}
         </div>
       )}
 
@@ -402,18 +770,34 @@ export default function DownloadScreen({ root }: { root?: string }) {
             </div>
             <div className="meta-sub">
               {[
-                meta.channel,
-                formatViews(meta.viewCount, language),
-                formatUploadDate(meta.uploadDate, language),
+                meta.kind === "playlist" ? t("download.playlist") : meta.channel,
+                meta.kind === "playlist"
+                  ? t("download.playlistCount", { count: playlistTotal })
+                  : formatViews(meta.viewCount, language),
+                meta.kind === "playlist"
+                  ? null
+                  : formatUploadDate(meta.uploadDate, language),
               ]
                 .filter(Boolean)
                 .join(" · ")}
             </div>
-            <div className="meta-formats">
-              {[formatDuration(meta.durationSecs), t("download.coverCached")]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
+            {meta.kind === "playlist" ? (
+              meta.entries.length > 0 && (
+                <ol className="playlist-preview">
+                  {meta.entries.map((entry) => (
+                    <li key={entry.id} title={entry.title}>
+                      {entry.title}
+                    </li>
+                  ))}
+                </ol>
+              )
+            ) : (
+              <div className="meta-formats">
+                {[formatDuration(meta.durationSecs), t("download.coverCached")]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -422,6 +806,81 @@ export default function DownloadScreen({ root }: { root?: string }) {
         <p className="meta-error" role="status">
           {metaError}
         </p>
+      )}
+
+      {showPlaylistChoice && !probing && (
+        <div className="playlist-card">
+          <div className="choice" role="group" aria-label={t("download.playlist")}>
+            <button
+              type="button"
+              className={!playlistAll ? "chip active" : "chip"}
+              onClick={() => setPlaylistChoice("video")}
+            >
+              {t("download.playlistSingle")}
+            </button>
+            <button
+              type="button"
+              className={playlistAll ? "chip active" : "chip"}
+              disabled={isClip}
+              title={isClip ? t("download.playlistNoClip") : undefined}
+              onClick={() => setPlaylistChoice("all")}
+            >
+              {t("download.playlistAll")}
+            </button>
+          </div>
+          {playlistAll && (
+            <>
+              <div className="playlist-range">
+                <label>
+                  {t("download.playlistRange")}
+                  <input
+                    className="field clip"
+                    type="number"
+                    min={1}
+                    max={MAX_PLAYLIST_ITEMS}
+                    value={playlistStart}
+                    onChange={(event) =>
+                      setPlaylistStart(event.currentTarget.value)
+                    }
+                    aria-label={t("download.playlistRange")}
+                  />
+                </label>
+                <label>
+                  {t("download.playlistRangeTo")}
+                  <input
+                    className="field clip"
+                    type="number"
+                    min={1}
+                    max={MAX_PLAYLIST_ITEMS}
+                    value={playlistEnd}
+                    onChange={(event) =>
+                      setPlaylistEnd(event.currentTarget.value)
+                    }
+                    aria-label={t("download.playlistRangeTo")}
+                  />
+                </label>
+                <span className="hint">{t("download.playlistFolder")}</span>
+              </div>
+              {playlistTotal > MAX_PLAYLIST_ITEMS && (
+                <p className="hint">
+                  {t("download.playlistLimit", { count: MAX_PLAYLIST_ITEMS })}
+                </p>
+              )}
+              {playlistTotal > 50 && (
+                <p className="hint warning">
+                  {t("download.playlistWarning", { count: playlistTotal })}
+                </p>
+              )}
+              {playlistError && (
+                <p className="field-error" role="alert">
+                  {t("download.playlistInvalid", {
+                    count: MAX_PLAYLIST_ITEMS,
+                  })}
+                </p>
+              )}
+            </>
+          )}
+        </div>
       )}
 
       <div className="dest">
@@ -478,41 +937,51 @@ export default function DownloadScreen({ root }: { root?: string }) {
               <span>{t("download.colSpeed")}</span>
               <span />
             </div>
-            {tasks.map((task) => (
-              <div className="qrow" key={task.id}>
-                <span className={`qdot ${task.state}`} aria-hidden="true" />
-                <div className="qname">
-                  <b title={task.url}>{task.url}</b>
-                  <span>{taskLabel(task, t)}</span>
-                </div>
-                <div className="qstatus">{stateLabel(task, language)}</div>
-                <div className="qprogress">
-                  <div className="qbar">
-                    <i style={{ width: `${Math.min(100, task.percent)}%` }} />
+            {tasks.map((task) => {
+              const label =
+                task.title && task.title.trim() ? task.title : task.url;
+              const status =
+                task.state === "running"
+                  ? [formatSpeed(task.speedBps, language), formatEta(task.etaSecs)]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : task.state === "skipped"
+                    ? t("download.alreadyDownloaded")
+                    : task.state === "partial"
+                      ? (task.error ?? t("download.partialHint"))
+                      : (task.error ?? "—");
+              return (
+                <div className="qrow" key={task.id}>
+                  <span className={`qdot ${task.state}`} aria-hidden="true" />
+                  <div className="qname">
+                    <b title={label}>{label}</b>
+                    <span>{taskSubtitle(task, t)}</span>
                   </div>
+                  <div className="qstatus">{stateLabel(task, language)}</div>
+                  <div className="qprogress">
+                    <div className="qbar">
+                      <i style={{ width: `${Math.min(100, task.percent)}%` }} />
+                    </div>
+                  </div>
+                  <div className="qspeed" title={task.error ?? undefined}>
+                    {status}
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={t("download.cancelTask", { url: task.url })}
+                    title={
+                      task.state === "running"
+                        ? t("download.cancel")
+                        : t("download.removeTask")
+                    }
+                    onClick={() => cancelTask(task.id)}
+                  >
+                    ×
+                  </button>
                 </div>
-                <div className="qspeed" title={task.error ?? undefined}>
-                  {task.state === "running"
-                    ? [formatSpeed(task.speedBps, language), formatEta(task.etaSecs)]
-                        .filter(Boolean)
-                        .join(" · ")
-                    : (task.error ?? "—")}
-                </div>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  aria-label={t("download.cancelTask", { url: task.url })}
-                  title={
-                    task.state === "running"
-                      ? t("download.cancel")
-                      : t("download.removeTask")
-                  }
-                  onClick={() => cancelTask(task.id)}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

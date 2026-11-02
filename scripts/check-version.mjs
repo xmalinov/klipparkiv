@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Ensures package.json, Cargo.toml, tauri.conf.json and the release tag agree.
+// Ensures package.json, package-lock.json, Cargo.toml, tauri.conf.json
+// and the release tag agree.
 // Usage: node scripts/check-version.mjs [--tag v1.3.0]
 
 import { readFileSync } from "node:fs";
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+const npmLock = JSON.parse(readFileSync("package-lock.json", "utf8"));
 const cargo = readFileSync("src-tauri/Cargo.toml", "utf8");
 const tauri = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
 const lock = readFileSync("src-tauri/Cargo.lock", "utf8");
@@ -29,6 +31,8 @@ if (!lockVersion) {
 
 const versions = {
   "package.json": pkg.version,
+  "package-lock.json": npmLock.version,
+  "package-lock.json#packages": npmLock.packages?.[""]?.version,
   "Cargo.toml": match[1],
   "Cargo.lock": lockVersion,
   "tauri.conf.json": tauri.version,

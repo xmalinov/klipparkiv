@@ -1,7 +1,7 @@
 {
   "name": "klipparkiv",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.6.0",
   "description": "Portable Windows GUI for yt-dlp: audio, video, clips and a library of downloads",
   "license": "MIT",
   "author": "Klipparkiv contributors",

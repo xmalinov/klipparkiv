@@ -25,11 +25,17 @@ no admin rights.
 - **Video** — MP4 H.264/AAC 480p–2160p; plays in QuickTime and other system
   players (when H.264 is missing, the best available stream is used).
 - **Audio + Video** — two files from one link, kept in separate archives.
-- **Clips** — cut audio or video by timecode, e.g. `00:01:30-00:05:00`.
-- **Batch** — one URL per line in a `.txt`; queue with 1–4 parallel downloads,
-  pause, resume and cancel.
+- **Clips** — cut audio or video by timecode, e.g. `00:01:30-00:05:00`;
+  open start/end, whole-video mode, live validation and range sliders.
+- **Playlists** — download the whole list or only the linked video, with an
+  optional range; files go into a folder named after the playlist.
+- **Batch** — a `.txt` list or a pasted set of links; drag and drop links or a
+  `.txt` file onto the window.
+- **Queue** — titles, playlist progress (`2/42`), “already there” and “partial”
+  states, 1–4 parallel downloads, pause, resume and cancel.
 - **Metadata preview** — title, channel, duration, thumbnail, formats.
-- **Download archive** — items you already saved are skipped.
+- **Download archive** — items you already saved are skipped (clips use
+  deterministic filenames instead, so a second clip is not blocked).
 - **Library** — covers, search, filters, sorting, open in the system player.
 - **App updates** — in-app banner, signed download, restart on your command.
 - **Update yt-dlp** from the UI.
@@ -97,7 +103,7 @@ npm ci
 npm run tauri dev        # dev mode
 node scripts/fetch-binaries.mjs mac-arm64   # or mac-x64
 npm run build:macos      # .app bundle
-npm run pack:macos -- 1.3.0 arm64           # DMG + update archive
+npm run pack:macos -- 1.6.0 arm64           # DMG + update archive
 ```
 
 The app drives external binaries that are **not** in this repository.
@@ -158,11 +164,17 @@ for setup and checks.
 - **Видео** — MP4 H.264/AAC от 480p до 2160p; открывается в QuickTime и других
   системных плеерах (если H.264 нет, берётся лучший доступный поток).
 - **Аудио + видео** — два файла по одной ссылке, в разных архивах.
-- **Клипы** — вырезание аудио или видео по таймкоду, например `00:01:30-00:05:00`.
-- **Пакетно** — по одной ссылке в строке `.txt`; очередь на 1–4 параллельные
-  загрузки, пауза, продолжение, отмена.
+- **Клипы** — вырезание аудио или видео по таймкоду, например `00:01:30-00:05:00`;
+  открытые границы, режим «весь ролик», живая проверка и слайдеры.
+- **Плейлисты** — весь список или только видео по ссылке, с диапазоном; файлы
+  складываются в папку с названием плейлиста.
+- **Пакетно** — `.txt` или вставленный список ссылок; drag & drop ссылок и `.txt`
+  прямо в окно.
+- **Очередь** — названия, прогресс плейлиста (`2/42`), статусы «Уже было» и
+  «Частично», 1–4 параллельные загрузки, пауза, продолжение, отмена.
 - **Предпросмотр** — название, канал, длительность, обложка, форматы.
-- **Архив загрузок** — уже сохранённое пропускается.
+- **Архив загрузок** — уже сохранённые элементы пропускаются (клипы не пишутся
+  в архив: у них детерминированное имя, поэтому второй клип не блокируется).
 - **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в системном плеере.
 - **Обновления приложения** — баннер в окне, подписанная загрузка, перезапуск по команде.
 - **Обновление yt-dlp** из интерфейса.
@@ -230,7 +242,7 @@ npm ci
 npm run tauri dev        # режим разработки
 node scripts/fetch-binaries.mjs mac-arm64   # или mac-x64
 npm run build:macos      # .app bundle
-npm run pack:macos -- 1.3.0 arm64           # DMG + архив обновления
+npm run pack:macos -- 1.6.0 arm64           # DMG + архив обновления
 ```
 
 Приложению нужны внешние бинарники, которых **нет** в репозитории.

@@ -185,6 +185,7 @@ pub fn run() {
             app_info,
             commands::enqueue_task,
             commands::enqueue_batch,
+            commands::enqueue_links,
             commands::probe_metadata,
             commands::cancel_task,
             commands::pause_queue,

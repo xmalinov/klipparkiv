@@ -57,6 +57,7 @@ impl Quality {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipSpec {
     pub start: String,
+    /// Normalized timecode or `inf` when the clip runs to the end of the video.
     pub end: String,
 }
 
@@ -69,21 +70,56 @@ impl ClipSpec {
     }
 
     /// Accepts `MM:SS` or `HH:MM:SS`, normalizes to `HH:MM:SS` and requires start < end.
+    /// An empty start means `00:00:00`, an empty end means `inf` (to the end).
     pub fn parse(start: &str, end: &str) -> Result<Self, ArgsError> {
-        let start_secs = parse_timecode(start).ok_or(ArgsError::InvalidClipTime)?;
-        let end_secs = parse_timecode(end).ok_or(ArgsError::InvalidClipTime)?;
-        if start_secs >= end_secs {
-            return Err(ArgsError::InvalidClipTime);
+        let start = start.trim();
+        let end = end.trim();
+        if start.is_empty() && end.is_empty() {
+            return Err(ArgsError::EmptyClipTime);
         }
-        Ok(Self::new(
-            format_timecode(start_secs),
-            format_timecode(end_secs),
-        ))
+
+        let start_secs = if start.is_empty() {
+            0
+        } else {
+            parse_timecode(start).ok_or(ArgsError::InvalidClipTime)?
+        };
+
+        let end = if end.is_empty() {
+            "inf".to_string()
+        } else {
+            let end_secs = parse_timecode(end).ok_or(ArgsError::InvalidClipTime)?;
+            if start_secs >= end_secs {
+                return Err(ArgsError::InvalidClipTime);
+            }
+            format_timecode(end_secs)
+        };
+
+        Ok(Self::new(format_timecode(start_secs), end))
     }
 
     fn section(&self) -> String {
         format!("*{}-{}", self.start, self.end)
     }
+
+    /// Deterministic suffix for the output template, e.g. `[00-01-30-00-05-00]`.
+    /// Colons are avoided so the name is valid on Windows without relying on
+    /// yt-dlp sanitizing `%(section_start)s`.
+    fn filename_suffix(&self) -> String {
+        let start = self.start.replace(':', "-");
+        let end = if self.end == "inf" {
+            "end".to_string()
+        } else {
+            self.end.replace(':', "-")
+        };
+        format!("[{start}-{end}]")
+    }
+}
+
+/// Playlist options. `None` in `ArgsRequest` means "single video only".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaylistSpec {
+    pub start: Option<u32>,
+    pub end: Option<u32>,
 }
 
 /// Parses `90`, `1:30` or `00:01:30` into seconds.
@@ -136,6 +172,8 @@ pub enum ArgsError {
     EmptyUrl,
     EmptyClipTime,
     InvalidClipTime,
+    PlaylistClip,
+    InvalidPlaylistRange,
 }
 
 impl std::fmt::Display for ArgsError {
@@ -155,9 +193,9 @@ impl std::fmt::Display for ArgsError {
                 f,
                 "{}",
                 if english {
-                    "clip start and end are required"
+                    "clip start and end are empty"
                 } else {
-                    "нужны начало и конец клипа"
+                    "начало и конец клипа не указаны"
                 }
             ),
             ArgsError::InvalidClipTime => write!(
@@ -167,6 +205,24 @@ impl std::fmt::Display for ArgsError {
                     "clip time must be MM:SS or HH:MM:SS and start < end"
                 } else {
                     "время клипа должно быть MM:SS или HH:MM:SS, начало раньше конца"
+                }
+            ),
+            ArgsError::PlaylistClip => write!(
+                f,
+                "{}",
+                if english {
+                    "clips are not supported for playlists"
+                } else {
+                    "клипы не поддерживаются для плейлистов"
+                }
+            ),
+            ArgsError::InvalidPlaylistRange => write!(
+                f,
+                "{}",
+                if english {
+                    "playlist range must be positive and start <= end"
+                } else {
+                    "диапазон плейлиста должен быть положительным, начало не больше конца"
                 }
             ),
         }
@@ -181,14 +237,17 @@ pub struct ArgsRequest<'a> {
     pub quality: Quality,
     pub audio_kbps: u32,
     pub clip: Option<&'a ClipSpec>,
+    pub playlist: Option<PlaylistSpec>,
     pub out_dir: &'a Path,
     pub archive: &'a Path,
     pub ffmpeg_dir: &'a Path,
     pub thumbs_dir: Option<&'a Path>,
 }
 
-const AUDIO_NAME: &str = "%(id)s - %(title)s.%(ext)s";
-const CLIP_NAME: &str = "%(id)s_%(section_start)s-%(section_end)s.%(ext)s";
+const MEDIA_NAME: &str = "%(id)s - %(title)s.%(ext)s";
+/// Keep room for the directory and the ` - title [range]` suffix below the
+/// 260-character Windows limit.
+const TRIM_FILENAMES: &str = "150";
 
 /// Builds the full yt-dlp argv (without the exe itself).
 /// Golden tests compare it with the commands in `..\README.md`.
@@ -202,6 +261,15 @@ pub fn build(request: &ArgsRequest<'_>) -> Result<Vec<OsString>, ArgsError> {
     {
         return Err(ArgsError::EmptyClipTime);
     }
+    if request.playlist.is_some() && request.clip.is_some() {
+        return Err(ArgsError::PlaylistClip);
+    }
+    if let Some(playlist) = request.playlist
+        && let (Some(start), Some(end)) = (playlist.start, playlist.end)
+        && (start == 0 || start > end)
+    {
+        return Err(ArgsError::InvalidPlaylistRange);
+    }
 
     let mut args: Vec<OsString> = Vec::new();
 
@@ -210,9 +278,23 @@ pub fn build(request: &ArgsRequest<'_>) -> Result<Vec<OsString>, ArgsError> {
     push(&mut args, "--progress-template");
     push(&mut args, crate::progress::PROGRESS_TEMPLATE);
     push(&mut args, "--no-color");
-    push(&mut args, "--no-playlist");
+    match request.playlist {
+        Some(_) => {
+            push(&mut args, "--yes-playlist");
+            // A playlist item may fail without aborting the whole run; the app
+            // counts `ERROR:` lines and reports a partial result.
+            push(&mut args, "--ignore-errors");
+            if let Some(range) = playlist_range(request.playlist) {
+                push(&mut args, "-I");
+                push(&mut args, &range);
+            }
+        }
+        None => push(&mut args, "--no-playlist"),
+    }
     push(&mut args, "--ffmpeg-location");
     args.push(request.ffmpeg_dir.as_os_str().to_owned());
+    push(&mut args, "--trim-filenames");
+    push(&mut args, TRIM_FILENAMES);
 
     if let Some(thumbs) = request.thumbs_dir {
         push(&mut args, "--write-thumbnail");
@@ -256,20 +338,38 @@ pub fn build(request: &ArgsRequest<'_>) -> Result<Vec<OsString>, ArgsError> {
         args.push(OsString::from(clip.section()));
     }
 
-    push(&mut args, "--download-archive");
-    args.push(request.archive.as_os_str().to_owned());
+    // `--download-archive` stores only the video id, so a second clip from the
+    // same video would be skipped. Clips rely on the deterministic filename and
+    // yt-dlp's default "do not overwrite" instead.
+    if request.clip.is_none() {
+        push(&mut args, "--download-archive");
+        args.push(request.archive.as_os_str().to_owned());
+    }
 
     push(&mut args, "-o");
     let template = match request.clip {
-        Some(_) => CLIP_NAME,
-        None => AUDIO_NAME,
+        Some(clip) => format!("%(id)s - %(title)s {}.%(ext)s", clip.filename_suffix()),
+        None => MEDIA_NAME.to_string(),
     };
     let mut output = PathBuf::from(request.out_dir);
+    if request.playlist.is_some() {
+        output.push("%(playlist_title)s");
+    }
     output.push(template);
     args.push(output.into_os_string());
 
     args.push(OsString::from(url));
     Ok(args)
+}
+
+fn playlist_range(playlist: Option<PlaylistSpec>) -> Option<String> {
+    let playlist = playlist?;
+    match (playlist.start, playlist.end) {
+        (None, None) => None,
+        (Some(start), None) => Some(format!("{start}:")),
+        (None, Some(end)) => Some(format!("1:{end}")),
+        (Some(start), Some(end)) => Some(format!("{start}:{end}")),
+    }
 }
 
 fn push(args: &mut Vec<OsString>, value: &str) {
@@ -323,6 +423,7 @@ mod tests {
             quality,
             audio_kbps: 320,
             clip,
+            playlist: None,
             out_dir: out,
             archive,
             ffmpeg_dir: bin,
@@ -352,6 +453,8 @@ mod tests {
             "--no-playlist".to_string(),
             "--ffmpeg-location".to_string(),
             path(&["bin"]),
+            "--trim-filenames".to_string(),
+            TRIM_FILENAMES.to_string(),
             "-x".to_string(),
             "--audio-format".to_string(),
             "mp3".to_string(),
@@ -362,7 +465,7 @@ mod tests {
             "--download-archive".to_string(),
             path(&["data", "archive_audio.txt"]),
             "-o".to_string(),
-            path(&["audio", AUDIO_NAME]),
+            path(&["audio", MEDIA_NAME]),
             URL.to_string(),
         ];
         assert_eq!(strings(args), expected);
@@ -392,7 +495,7 @@ mod tests {
             args[args.len() - 3..].to_vec(),
             vec![
                 "-o".to_string(),
-                path(&["video", AUDIO_NAME]),
+                path(&["video", MEDIA_NAME]),
                 URL.to_string(),
             ]
         );
@@ -423,7 +526,107 @@ mod tests {
             args.windows(2)
                 .any(|w| w == ["--download-sections", "*00:01:30-00:05:00"])
         );
-        assert!(args.contains(&path(&["audio", CLIP_NAME]).to_string()));
+        assert!(args.contains(&path(&[
+            "audio",
+            "%(id)s - %(title)s [00-01-30-00-05-00].%(ext)s"
+        ])));
+        assert!(!args.contains(&"--download-archive".to_string()));
+        assert!(!args.iter().any(|arg| arg.contains("%(section_start)s")));
+    }
+
+    #[test]
+    fn clip_open_end_uses_inf_and_readable_suffix() {
+        let (out, archive, bin) = paths();
+        let clip = ClipSpec::new("00:01:30", "inf");
+        let args = strings(
+            build(&request(
+                Mode::Video,
+                Quality::P1080,
+                Some(&clip),
+                &out,
+                &archive,
+                &bin,
+            ))
+            .unwrap(),
+        );
+
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["--download-sections", "*00:01:30-inf"])
+        );
+        assert!(args.contains(&path(&[
+            "audio",
+            "%(id)s - %(title)s [00-01-30-end].%(ext)s"
+        ])));
+    }
+
+    #[test]
+    fn playlist_downloads_use_range_and_subfolder() {
+        let (out, archive, bin) = paths();
+        let playlist = PlaylistSpec {
+            start: Some(2),
+            end: Some(10),
+        };
+        let mut req = request(Mode::Audio, Quality::P1080, None, &out, &archive, &bin);
+        req.playlist = Some(playlist);
+
+        let args = strings(build(&req).unwrap());
+
+        assert!(args.contains(&"--yes-playlist".to_string()));
+        assert!(args.contains(&"--ignore-errors".to_string()));
+        assert!(args.windows(2).any(|w| w == ["-I", "2:10"]));
+        assert!(!args.contains(&"--no-playlist".to_string()));
+        assert!(args.contains(&path(&["audio", "%(playlist_title)s", MEDIA_NAME])));
+    }
+
+    #[test]
+    fn single_video_keeps_no_playlist() {
+        let (out, archive, bin) = paths();
+        let args = strings(
+            build(&request(
+                Mode::Audio,
+                Quality::P1080,
+                None,
+                &out,
+                &archive,
+                &bin,
+            ))
+            .unwrap(),
+        );
+        assert!(args.contains(&"--no-playlist".to_string()));
+        assert!(!args.contains(&"--yes-playlist".to_string()));
+    }
+
+    #[test]
+    fn rejects_playlist_clips_and_bad_ranges() {
+        let (out, archive, bin) = paths();
+        let clip = ClipSpec::new("00:01:30", "00:05:00");
+        let mut req = request(
+            Mode::Video,
+            Quality::P1080,
+            Some(&clip),
+            &out,
+            &archive,
+            &bin,
+        );
+        req.playlist = Some(PlaylistSpec {
+            start: None,
+            end: None,
+        });
+        assert_eq!(build(&req).unwrap_err(), ArgsError::PlaylistClip);
+
+        let mut req = request(Mode::Audio, Quality::P1080, None, &out, &archive, &bin);
+        req.playlist = Some(PlaylistSpec {
+            start: Some(0),
+            end: Some(3),
+        });
+        assert_eq!(build(&req).unwrap_err(), ArgsError::InvalidPlaylistRange);
+
+        req.playlist = Some(PlaylistSpec {
+            start: Some(5),
+            end: Some(3),
+        });
+        assert_eq!(build(&req).unwrap_err(), ArgsError::InvalidPlaylistRange);
     }
 
     #[test]
@@ -476,7 +679,7 @@ mod tests {
     #[test]
     fn rejects_empty_clip_time() {
         let (out, archive, bin) = paths();
-        let clip = ClipSpec::new("", "00:05:00");
+        let clip = ClipSpec::new("", "");
         assert_eq!(
             build(&request(
                 Mode::Video,
@@ -588,6 +791,18 @@ mod tests {
         assert_eq!(clip.start, "00:01:30");
         assert_eq!(clip.end, "00:05:00");
 
+        let from_start = ClipSpec::parse("", "2:00").unwrap();
+        assert_eq!(from_start.start, "00:00:00");
+        assert_eq!(from_start.end, "00:02:00");
+
+        let to_end = ClipSpec::parse("1:30", "").unwrap();
+        assert_eq!(to_end.start, "00:01:30");
+        assert_eq!(to_end.end, "inf");
+
+        assert_eq!(
+            ClipSpec::parse("", "").unwrap_err(),
+            ArgsError::EmptyClipTime
+        );
         assert_eq!(
             ClipSpec::parse("00:05:00", "00:01:30").unwrap_err(),
             ArgsError::InvalidClipTime

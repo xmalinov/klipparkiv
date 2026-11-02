@@ -3,11 +3,20 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type TaskMode = "audio" | "video";
 export type DownloadMode = TaskMode | "both" | "clip";
-export type TaskState = "queued" | "running" | "done" | "failed" | "canceled";
+export type TaskState =
+  | "queued"
+  | "running"
+  | "done"
+  | "skipped"
+  | "partial"
+  | "failed"
+  | "canceled";
 
 export interface TaskSnapshot {
   id: string;
   url: string;
+  /** Human title once known: preview card or yt-dlp output. */
+  title: string | null;
   mode: TaskMode;
   clip: boolean;
   state: TaskState;
@@ -15,9 +24,19 @@ export interface TaskSnapshot {
   speedBps: number | null;
   etaSecs: number | null;
   error: string | null;
+  playlistIndex: number | null;
+  playlistCount: number | null;
+  outputPath: string | null;
+}
+
+export interface PlaylistEntry {
+  id: string;
+  title: string;
 }
 
 export interface VideoInfo {
+  /** `video` for a single item, `playlist` when the link refers to a list. */
+  kind: "video" | "playlist";
   id: string;
   title: string;
   channel: string | null;
@@ -25,6 +44,9 @@ export interface VideoInfo {
   thumbnailUrl: string | null;
   uploadDate: string | null;
   viewCount: number | null;
+  playlistCount: number | null;
+  /** First few playlist items, enough for the preview card. */
+  entries: PlaylistEntry[];
 }
 
 export interface ProgressPayload {
@@ -32,6 +54,8 @@ export interface ProgressPayload {
   percent: number;
   speedBps: number | null;
   etaSecs: number | null;
+  playlistIndex: number | null;
+  playlistCount: number | null;
 }
 
 export interface LogPayload {
@@ -49,6 +73,16 @@ export interface BatchRequest {
   path: string;
   mode: DownloadMode;
   quality?: string;
+  audioKbps?: number;
+  outDir?: string;
+}
+
+export interface LinksRequest {
+  text: string;
+  mode: DownloadMode;
+  quality?: string;
+  audioKbps?: number;
+  outDir?: string;
 }
 
 export interface NewTask {
@@ -59,6 +93,10 @@ export interface NewTask {
   outDir?: string;
   clipStart?: string;
   clipEnd?: string;
+  title?: string;
+  playlist?: boolean;
+  playlistStart?: number;
+  playlistEnd?: number;
 }
 
 export function enqueueTask(task: NewTask): Promise<TaskSnapshot[]> {
@@ -71,6 +109,10 @@ export function probeMetadata(url: string): Promise<VideoInfo> {
 
 export function enqueueBatch(request: BatchRequest): Promise<TaskSnapshot[]> {
   return invoke<TaskSnapshot[]>("enqueue_batch", { request });
+}
+
+export function enqueueLinks(request: LinksRequest): Promise<TaskSnapshot[]> {
+  return invoke<TaskSnapshot[]>("enqueue_links", { request });
 }
 
 export function pauseQueue(): Promise<QueueState> {
@@ -126,6 +168,8 @@ export function applyProgress(
           percent: progress.percent,
           speedBps: progress.speedBps,
           etaSecs: progress.etaSecs,
+          playlistIndex: progress.playlistIndex ?? task.playlistIndex,
+          playlistCount: progress.playlistCount ?? task.playlistCount,
         }
       : task,
   );
@@ -172,6 +216,38 @@ export function formatDuration(seconds: number | null): string {
     return `${hours}:${minutes.toString().padStart(2, "0")}:${rest.toString().padStart(2, "0")}`;
   }
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Mirrors the backend parser: `SS`, `MM:SS` or `HH:MM:SS`.
+ * Returns `null` for anything else.
+ */
+export function parseTimecode(raw: string): number | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const parts = text.split(":");
+  if (parts.length > 3 || parts.some((part) => part === "")) return null;
+  let seconds = 0;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!/^\d+$/.test(part)) return null;
+    const value = Number(part);
+    const isHours = parts.length === 3 && index === 0;
+    if (parts.length > 1 && !isHours && value >= 60) return null;
+    seconds = seconds * 60 + value;
+  }
+  return seconds;
+}
+
+/** `90` → `00:01:30`, matching the strings sent to the backend. */
+export function formatTimecode(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  return [hours, minutes, rest]
+    .map((value) => value.toString().padStart(2, "0"))
+    .join(":");
 }
 
 export function formatViews(
@@ -221,12 +297,16 @@ export function stateLabel(
       ? {
           queued: "В очереди",
           done: "Готово",
+          skipped: "Уже было",
+          partial: "Частично",
           failed: "Ошибка",
           canceled: "Отменено",
         }
       : {
           queued: "Queued",
           done: "Done",
+          skipped: "Already there",
+          partial: "Partial",
           failed: "Error",
           canceled: "Canceled",
         };
@@ -237,6 +317,10 @@ export function stateLabel(
       return formatPercent(task.percent);
     case "done":
       return labels.done;
+    case "skipped":
+      return labels.skipped;
+    case "partial":
+      return labels.partial;
     case "failed":
       return labels.failed;
     case "canceled":

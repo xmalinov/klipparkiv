@@ -10,6 +10,34 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.6.0] — 2026-11-02
+
+#### Added
+
+- Playlist links are detected during the metadata probe. `playlist?list=…` opens as
+  "Whole playlist", `watch?…&list=…` defaults to "This video only"; the user can switch.
+- Playlist range "From # / to #" with a hard cap of 500 items and a warning above 50.
+  Playlist files go to `audio\<playlist title>\` or `video\<playlist title>\`.
+- Clip UX: "From start" / "To end" / "Whole video" chips, live timecode validation,
+  clip-length hint and two range sliders when the duration is known.
+- Multi-link paste panel ("Add all" / "Keep the first") and drag & drop of links or
+  `.txt` lists onto the download screen.
+- Queue shows the video/playlist title, `playlist · 2/42` counters, and the
+  "Already there" and "Partial" states.
+- Batch downloads now honor the selected audio bitrate and destination folder.
+
+#### Changed
+
+- Clip files are named `ID - Title [HH-MM-SS-HH-MM-SS].ext` (open end: `[…-end]`);
+  the library decodes the new and the legacy names.
+- Playlist progress is aggregated across all items instead of showing the current item.
+
+#### Fixed
+
+- A second clip from the same video is no longer silently skipped by the download
+  archive: clips bypass `--download-archive` and rely on the deterministic filename.
+- Filenames are trimmed (`--trim-filenames 150`) to stay below the Windows path limit.
+
 ### [1.3.0] — 2026-11-01
 
 #### Added
@@ -78,6 +106,36 @@ First public release.
 
 ## Русский
 
+### [1.6.0] — 2026-11-02
+
+#### Добавлено
+
+- Ссылки на плейлисты распознаются при проверке метаданных. `playlist?list=…`
+  открывается как «Весь плейлист», `watch?…&list=…` — как «Только это видео»
+  с возможностью переключить.
+- Диапазон «С № / по №» с жёстким пределом 500 видео и предупреждением при списке
+  длиннее 50. Файлы плейлиста попадают в `audio\<название плейлиста>\` или
+  `video\<название плейлиста>\`.
+- Клипы: чипы «С начала» / «До конца» / «Весь ролик», живая проверка таймкодов,
+  подсказка длины клипа и два слайдера, когда длительность ролика известна.
+- Панель «Список ссылок» («Добавить все» / «Оставить первую») и drag & drop ссылок
+  или `.txt`-списков в экран загрузки.
+- Очередь показывает название видео/плейлиста, счётчик `плейлист · 2/42` и статусы
+  «Уже было» / «Частично».
+- Пакетная загрузка учитывает выбранный битрейт аудио и папку назначения.
+
+#### Изменено
+
+- Клипы называются `ID - Название [чч-мм-сс-чч-мм-сс].ext` (открытый конец —
+  `[…-end]`); библиотека понимает новые и старые имена.
+- Прогресс плейлиста считается по всем видео, а не по текущему элементу.
+
+#### Исправлено
+
+- Второй клип из того же видео больше не пропускается архивом: клипы не используют
+  `--download-archive`, а опираются на детерминированное имя файла.
+- Имена файлов обрезаются (`--trim-filenames 150`) и не упираются в лимит пути Windows.
+
 ### [1.3.0] — 2026-11-01
 
 #### Добавлено
@@ -143,6 +201,8 @@ First public release.
 - Уведомление Windows по завершении пакета.
 - Портативная структура: настройки и индекс в `data\`, медиа в `audio\` и `video\`.
 
+[1.6.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.0
+[1.3.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.3.0
 [1.2.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.2.0
 [1.1.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.1.0
 [1.0.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.0.0

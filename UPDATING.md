@@ -46,21 +46,21 @@ only the existing updater signing key.
 
    ```bash
    npm run check:version
-   node scripts/check-version.mjs --tag v1.3.0
+   node scripts/check-version.mjs --tag v1.6.0
    ```
 
 4. Commit, then push `main` and the tag:
 
    ```bash
-   git tag -a v1.3.0 -m "Klipparkiv 1.3.0"
-   git push origin main v1.3.0
+   git tag -a v1.6.0 -m "Klipparkiv 1.3.0"
+   git push origin main v1.6.0
    ```
 
 5. The Release workflow builds Windows and both macOS bundles, then creates a
    **draft** release. Check the artifacts and publish it:
 
    ```bash
-   gh release edit v1.3.0 --draft=false
+   gh release edit v1.6.0 --draft=false
    ```
 
 6. `releases/latest` and the landing page start pointing at the new version only
@@ -68,9 +68,10 @@ only the existing updater signing key.
 
 ## Version bump
 
-Bump the version in all four files:
+Bump the version in all five files:
 
 - `package.json`
+- `package-lock.json` (the root and `packages[""]` versions)
 - `src-tauri/Cargo.toml`
 - `src-tauri/tauri.conf.json`
 - `src-tauri/Cargo.lock` (the `klipparkiv` package entry)
@@ -79,10 +80,10 @@ Refresh the lockfile after the `Cargo.toml` bump, then check:
 
 ```bash
 cargo check --manifest-path src-tauri/Cargo.toml
-node scripts/check-version.mjs --tag v1.3.0
+node scripts/check-version.mjs --tag v1.6.0
 ```
 
-The check refuses a mismatch between any of the four files and the tag.
+The check refuses a mismatch between any of the version files and the tag.
 The release workflow checks the tag against `package.json`.
 
 ## Manual release
