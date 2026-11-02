@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>klipparkiv, портативное приложение для yt-dlp на windows и macos</title>
-<meta name="description" content="Аудио, видео и клипы по таймкоду из любой ссылки yt-dlp, в одной библиотеке. Портативное приложение для Windows и нативное для macOS.">
+<meta name="description" content="Аудио, видео, клипы по таймкоду и плейлисты из любой ссылки yt-dlp, в одной библиотеке. Портативное приложение для Windows и нативное для macOS.">
 <link rel="alternate" hreflang="en" href="../">
 <link rel="stylesheet" href="../page.css">
 </head>
@@ -18,6 +18,7 @@
       klipparkiv
     </a>
     <nav class="nav__links" aria-label="разделы">
+      <a href="#new">что нового</a>
       <a href="#flow">что умеет</a>
       <a href="https://github.com/xmalinov/klipparkiv">github</a>
       <a href="../" class="lang" hreflang="en" lang="en" aria-label="read this page in english">en</a>
@@ -31,7 +32,7 @@
     <div class="container hero__grid">
       <div>
         <h1>Скачать, нарезать, сохранить</h1>
-        <p class="lead">yt-dlp без терминала: аудио, видео, клипы по таймкоду и библиотека — на Windows и macOS.</p>
+        <p class="lead">yt-dlp без терминала: аудио, видео, клипы по таймкоду, плейлисты и библиотека — на Windows и macOS.</p>
         <div class="actions">
           <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Скачать для Windows</a>
           <a class="btn btn--quiet" href="#macos">Скачать для macOS</a>
@@ -46,6 +47,21 @@
       <figure class="shot">
         <img src="../assets/download.png" width="1000" height="700" alt="экран загрузки: вставленная ссылка с названием и форматами, ниже очередь" fetchpriority="high" decoding="async">
       </figure>
+    </div>
+  </section>
+
+  <section class="section" id="new">
+    <div class="container flow">
+      <div>
+        <h2>Новое в 1.6.0</h2>
+        <p>Плейлисты, клипы с открытыми границами, мультивставка и более понятная очередь — без лишнего шага в основном сценарии.</p>
+      </div>
+      <ul class="zip" aria-label="что нового в версии 1.6.0">
+        <li><b>Плейлисты</b><span>весь список или одно видео, с диапазоном</span></li>
+        <li><b>Границы клипа</b><span>с начала, до конца, весь ролик и слайдеры</span></li>
+        <li><b>Много ссылок</b><span>вставить список или перетащить .txt в окно</span></li>
+        <li><b>Очередь</b><span>названия, 2/42, «Уже было» и «Частично»</span></li>
+      </ul>
     </div>
   </section>
 
@@ -64,11 +80,19 @@
           </div>
           <div>
             <dt>Клип</dt>
-            <dd>Нарезка по таймкоду, <code>00:01:30-00:05:00</code>, аудио или видео.</dd>
+            <dd>Нарезка по таймкоду, <code>00:01:30-00:05:00</code>, аудио или видео. Оставьте начало или конец пустым, чтобы резать до края; если длительность известна, появляются слайдеры.</dd>
+          </div>
+          <div>
+            <dt>Плейлист</dt>
+            <dd>Весь список или только видео по ссылке, с диапазоном. Файлы складываются в папку с названием плейлиста.</dd>
+          </div>
+          <div>
+            <dt>Ссылки</dt>
+            <dd>Вставьте несколько ссылок сразу или перетащите <code>.txt</code> в окно. Можно добавить все или оставить первую.</dd>
           </div>
           <div>
             <dt>Очередь</dt>
-            <dd>1-4 загрузки одновременно, пауза, продолжение, отмена.</dd>
+            <dd>1-4 загрузки одновременно, с названиями, прогрессом плейлиста вроде <code>2/42</code>, паузой, продолжением и отменой.</dd>
           </div>
           <div>
             <dt>Библиотека</dt>
@@ -76,7 +100,7 @@
           </div>
           <div>
             <dt>Архив</dt>
-            <dd>Уже сохранённое пропускается при следующем запуске.</dd>
+            <dd>Уже сохранённые элементы пропускаются при следующем запуске. У клипов вместо архива детерминированное имя, поэтому второй клип не блокируется.</dd>
           </div>
         </dl>
       </div>

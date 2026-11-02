@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>klipparkiv, a portable GUI for yt-dlp on Windows and macOS</title>
-<meta name="description" content="Audio, video and timecode clips from any yt-dlp link, kept in a library. Portable on Windows, a native app on macOS.">
+<meta name="description" content="Audio, video, timecode clips and playlists from any yt-dlp link, kept in a library. Portable on Windows, a native app on macOS.">
 <link rel="alternate" hreflang="ru" href="ru/">
 <link rel="stylesheet" href="page.css">
 </head>
@@ -18,6 +18,7 @@
       klipparkiv
     </a>
     <nav class="nav__links" aria-label="sections">
+      <a href="#new">what's new</a>
       <a href="#flow">what it does</a>
       <a href="https://github.com/xmalinov/klipparkiv">github</a>
       <a href="ru/" class="lang" hreflang="ru" lang="ru" aria-label="read this page in russian">ru</a>
@@ -31,7 +32,7 @@
     <div class="container hero__grid">
       <div>
         <h1>Download, cut, keep</h1>
-        <p class="lead">yt-dlp without the terminal: audio, video, timecode clips and a library, on Windows and macOS.</p>
+        <p class="lead">yt-dlp without the terminal: audio, video, timecode clips, playlists and a library, on Windows and macOS.</p>
         <div class="actions">
           <a class="btn btn--primary" href="https://github.com/xmalinov/klipparkiv/releases/latest">Download for Windows</a>
           <a class="btn btn--quiet" href="#macos">Download for macOS</a>
@@ -46,6 +47,21 @@
       <figure class="shot">
         <img src="assets/download.png" width="1000" height="700" alt="the download screen: a pasted link with its title and formats, above an empty queue" fetchpriority="high" decoding="async">
       </figure>
+    </div>
+  </section>
+
+  <section class="section" id="new">
+    <div class="container flow">
+      <div>
+        <h2>New in 1.6.0</h2>
+        <p>Playlists, open-ended clips, multi-link input and a clearer queue — without adding another step to the main flow.</p>
+      </div>
+      <ul class="zip" aria-label="what is new in version 1.6.0">
+        <li><b>Playlists</b><span>whole list or one video, with an item range</span></li>
+        <li><b>Clip bounds</b><span>from start, to end, whole video, plus sliders</span></li>
+        <li><b>Many links</b><span>paste a list or drop a .txt onto the window</span></li>
+        <li><b>Queue</b><span>titles, 2/42, already there and partial</span></li>
+      </ul>
     </div>
   </section>
 
@@ -64,11 +80,19 @@
           </div>
           <div>
             <dt>Clip</dt>
-            <dd>Timecode cut, <code>00:01:30-00:05:00</code>, audio or video.</dd>
+            <dd>Timecode cut, <code>00:01:30-00:05:00</code>, audio or video. Leave the start or end empty to cut to the edge; sliders appear when the duration is known.</dd>
+          </div>
+          <div>
+            <dt>Playlist</dt>
+            <dd>Whole list or just the linked video, with an optional item range. Files go into a folder named after the playlist.</dd>
+          </div>
+          <div>
+            <dt>Links</dt>
+            <dd>Paste several links at once, or drop a <code>.txt</code> onto the window. Add all of them or keep the first.</dd>
           </div>
           <div>
             <dt>Queue</dt>
-            <dd>1-4 downloads at a time, pause, resume, cancel.</dd>
+            <dd>1-4 downloads at a time, with titles, playlist progress like <code>2/42</code>, pause, resume and cancel.</dd>
           </div>
           <div>
             <dt>Library</dt>
@@ -76,7 +100,7 @@
           </div>
           <div>
             <dt>Archive</dt>
-            <dd>What you already saved is skipped next time.</dd>
+            <dd>What you already saved is skipped next time. Clips use deterministic names instead, so another clip is not blocked.</dd>
           </div>
         </dl>
       </div>
