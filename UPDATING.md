@@ -29,8 +29,11 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`:
 1. `build-windows` builds the portable zip and update exe.
 2. `build-macos` (matrix: `macos-15-intel`, `macos-15`) builds, ad-hoc signs
    and packs the `.app`, DMG and update archive.
-3. `publish` merges the platform fragments into `update.json` and creates a
-   **draft** release. Publish it with:
+3. `publish` builds the release body from the `### [<version>]` section of
+   `CHANGELOG.md` (`scripts/release-notes.mjs`), merges the platform fragments
+   into `update.json`, and creates a **draft** release named
+   `Klipparkiv <version>`. GitHub's auto-generated “What's Changed” notes are
+   not used. Publish the draft with:
    `gh release edit v<version> --draft=false`.
 
 The release workflow does **not** need a Developer ID or notarization. It needs
@@ -39,9 +42,10 @@ only the existing updater signing key.
 ## Release checklist
 
 1. Bump the version (see below) and move the `Unreleased` changelog entries into
-   the new version section.
+   a `### [<version>] — YYYY-MM-DD` section. This section is the release body:
+   keep it user-facing and bilingual, and remove dependency-only noise.
 2. Update the README and the landing page on the `gh-pages` branch when the
-   supported platforms or install steps change.
+   supported platforms, install steps or feature highlights change.
 3. Run the checks and the version check for the new tag:
 
    ```bash
@@ -52,12 +56,13 @@ only the existing updater signing key.
 4. Commit, then push `main` and the tag:
 
    ```bash
-   git tag -a v1.6.0 -m "Klipparkiv 1.3.0"
+   git tag -a v1.6.0 -m "Klipparkiv 1.6.0"
    git push origin main v1.6.0
    ```
 
 5. The Release workflow builds Windows and both macOS bundles, then creates a
-   **draft** release. Check the artifacts and publish it:
+   **draft** release titled `Klipparkiv 1.6.0` with the changelog body. Check
+   the title, notes and artifacts, then publish it:
 
    ```bash
    gh release edit v1.6.0 --draft=false
