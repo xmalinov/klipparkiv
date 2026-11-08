@@ -39,20 +39,12 @@ const NAV: {
   },
 ];
 
+function missingBinaries(info: AppInfo) {
+  return info.binaries.filter((binary) => binary.version === null);
+}
+
 function environmentWarnings(info: AppInfo, t: Translate): string[] {
-  const warnings: string[] = [];
-  if (!info.writable) warnings.push(t("app.notWritable"));
-  const missing = [
-    ["yt-dlp", info.ytdlp],
-    ["ffmpeg", info.ffmpeg],
-    ["ffprobe", info.ffprobe],
-  ]
-    .filter(([, version]) => version === null)
-    .map(([name]) => name);
-  if (missing.length > 0) {
-    warnings.push(t("app.missingBinaries", { names: missing.join(", ") }));
-  }
-  return warnings;
+  return info.writable ? [] : [t("app.notWritable")];
 }
 
 export default function App() {
@@ -138,6 +130,28 @@ export default function App() {
               {warning}
             </p>
           ))}
+          {info && missingBinaries(info).length > 0 && (
+            <div className="banner" role="alert">
+              <p>
+                {t("app.missingBinaries", {
+                  names: missingBinaries(info)
+                    .map((binary) => binary.name)
+                    .join(", "),
+                  dir: info.binDir,
+                })}
+              </p>
+              <p className="banner-hint">{t("app.missingBinariesHint")}</p>
+              <ul className="binary-details">
+                {missingBinaries(info).map((binary) => (
+                  <li key={binary.name}>
+                    <code>{binary.name}</code>
+                    <span className="mono small-text">{binary.path}</span>
+                    <span>{binary.error ?? t("common.notFound")}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {screen === "download" ? (
             <DownloadScreen root={info?.root} />

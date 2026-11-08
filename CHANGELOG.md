@@ -10,6 +10,27 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.6.2] — 2026-11-09
+
+Diagnostics release. Download and library behaviour is unchanged.
+
+#### Changed
+
+- Startup now reports every missing or broken binary separately, with the full
+  path, the OS error and a likely cause. The warning names the `bin` folder and
+  explains how to fix it.
+- A failed `yt-dlp` launch shows the executable path and a hint for the specific
+  error: missing file (2), missing folder (3), antivirus block (5/225), wrong
+  architecture (193) or a too-long path (206). The same applies to the metadata
+  probe, the download queue and `yt-dlp --update`.
+- Settings → Updates lists the error and path for every binary whose version
+  could not be read.
+
+#### Fixed
+
+- A missing `bin` folder is no longer reported only as "not found in bin": the
+  UI now distinguishes a missing file from a missing folder or a blocked file.
+
 ### [1.6.1] — 2026-11-02
 
 Documentation and release-hygiene release. No download or library behaviour
@@ -130,6 +151,27 @@ First public release.
 
 ## Русский
 
+### [1.6.2] — 2026-11-09
+
+Диагностический релиз. Поведение загрузок и библиотеки не изменилось.
+
+#### Изменено
+
+- При старте каждый отсутствующий или нерабочий бинарник показывается отдельно:
+  полный путь, ошибка Windows и вероятная причина. В предупреждении указана
+  папка `bin` и как это исправить.
+- При неудачном запуске `yt-dlp` выводятся путь к файлу и подсказка для
+  конкретной ошибки: файл не найден (2), папка не найдена (3), блокировка
+  антивирусом (5/225), неверная архитектура (193), слишком длинный путь (206).
+  То же для проверки метаданных, очереди загрузок и `yt-dlp --update`.
+- В «Настройки → Обновления» для каждого бинарника с нечитаемой версией
+  показываются ошибка и путь.
+
+#### Исправлено
+
+- Отсутствие папки `bin` больше не сводится к «не найдены в bin»: интерфейс
+  отличает отсутствующий файл от отсутствующей папки и заблокированного файла.
+
 ### [1.6.1] — 2026-11-02
 
 Релиз документации и юридической гигиены. Поведение загрузок и библиотеки не
@@ -249,6 +291,7 @@ First public release.
 - Уведомление Windows по завершении пакета.
 - Портативная структура: настройки и индекс в `data\`, медиа в `audio\` и `video\`.
 
+[1.6.2]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.2
 [1.6.1]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.1
 [1.6.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.0
 [1.3.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.3.0

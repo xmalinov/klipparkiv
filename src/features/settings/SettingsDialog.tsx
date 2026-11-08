@@ -20,6 +20,12 @@ import { useI18n } from "../../i18n";
 
 type Tab = "general" | "library" | "updates" | "about";
 
+function binaryError(info: AppInfo | null, name: string): string | undefined {
+  return (
+    info?.binaries.find((binary) => binary.name === name)?.error ?? undefined
+  );
+}
+
 const TABS: {
   id: Tab;
   labelKey:
@@ -400,22 +406,31 @@ export default function SettingsDialog({
               <p className="hint">{t("settings.appUpdateHint")}</p>
               <div className="row">
                 <span className="label">yt-dlp</span>
-                <span className="muted">
+                <span className="muted" title={binaryError(info, "yt-dlp")}>
                   {info?.ytdlp ?? t("common.notFound")}
                 </span>
               </div>
               <div className="row">
                 <span className="label">ffmpeg</span>
-                <span className="muted">
+                <span className="muted" title={binaryError(info, "ffmpeg")}>
                   {info?.ffmpeg ?? t("common.notFound")}
                 </span>
               </div>
               <div className="row">
                 <span className="label">ffprobe</span>
-                <span className="muted">
+                <span className="muted" title={binaryError(info, "ffprobe")}>
                   {info?.ffprobe ?? t("common.notFound")}
                 </span>
               </div>
+              {info?.binaries
+                .filter((binary) => binary.version === null)
+                .map((binary) => (
+                  <p className="hint warning" key={binary.name}>
+                    <code>{binary.name}</code>:{" "}
+                    {binary.error ?? t("common.notFound")} —{" "}
+                    <span className="mono small-text">{binary.path}</span>
+                  </p>
+                ))}
               <div className="row">
                 <span className="label">{t("settings.updateYtdlp")}</span>
                 <button

@@ -26,9 +26,30 @@ const info = {
   writable: true,
   version: "1.1.0",
   updateConfigured: true,
+  binDir: "C:\\apps\\klipparkiv\\bin",
   ytdlp: "2026.10.26",
   ffmpeg: "2026-10-29",
   ffprobe: "2026-10-29",
+  binaries: [
+    {
+      name: "yt-dlp",
+      path: "C:\\apps\\klipparkiv\\bin\\yt-dlp.exe",
+      version: "2026.10.26",
+      error: null,
+    },
+    {
+      name: "ffmpeg",
+      path: "C:\\apps\\klipparkiv\\bin\\ffmpeg.exe",
+      version: "2026-10-29",
+      error: null,
+    },
+    {
+      name: "ffprobe",
+      path: "C:\\apps\\klipparkiv\\bin\\ffprobe.exe",
+      version: "2026-10-29",
+      error: null,
+    },
+  ],
 };
 
 describe("SettingsDialog", () => {

@@ -46,22 +46,48 @@ struct AppInfo {
     writable: bool,
     version: String,
     update_configured: bool,
+    bin_dir: String,
     ytdlp: Option<String>,
     ffmpeg: Option<String>,
     ffprobe: Option<String>,
+    binaries: Vec<binaries::BinaryStatus>,
 }
 
-#[tauri::command]
-fn app_info(paths: tauri::State<'_, AppPaths>) -> AppInfo {
+fn app_info_for(paths: &AppPaths) -> AppInfo {
     let writable = paths.ensure_layout().is_ok();
     #[cfg(target_os = "macos")]
-    let _ = binaries::ensure_managed_ytdlp(&paths);
-    let ffmpeg = binaries::read_version(&paths.ffmpeg(), "-version")
-        .as_deref()
-        .and_then(binaries::parse_ffmpeg_version);
-    let ffprobe = binaries::read_version(&paths.ffprobe(), "-version")
-        .as_deref()
-        .and_then(binaries::parse_ffmpeg_version);
+    let _ = binaries::ensure_managed_ytdlp(paths);
+
+    let ytdlp = {
+        #[cfg(target_os = "macos")]
+        {
+            match binaries::ytdlp_version(paths) {
+                Ok(version) => binaries::status("yt-dlp", &paths.ytdlp(), Some(version), None),
+                Err(error) => binaries::status("yt-dlp", &paths.ytdlp(), None, Some(error)),
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            binaries::inspect(
+                "yt-dlp",
+                &paths.ytdlp(),
+                "--version",
+                binaries::parse_ytdlp_version,
+            )
+        }
+    };
+    let ffmpeg = binaries::inspect(
+        "ffmpeg",
+        &paths.ffmpeg(),
+        "-version",
+        binaries::parse_ffmpeg_version,
+    );
+    let ffprobe = binaries::inspect(
+        "ffprobe",
+        &paths.ffprobe(),
+        "-version",
+        binaries::parse_ffmpeg_version,
+    );
 
     AppInfo {
         root: paths.root().display().to_string(),
@@ -74,21 +100,17 @@ fn app_info(paths: tauri::State<'_, AppPaths>) -> AppInfo {
         writable,
         version: env!("CARGO_PKG_VERSION").to_string(),
         update_configured: updater::is_configured(),
-        ytdlp: {
-            #[cfg(target_os = "macos")]
-            {
-                binaries::ytdlp_version(&paths)
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                binaries::read_version(&paths.ytdlp(), "--version")
-                    .as_deref()
-                    .and_then(binaries::parse_ytdlp_version)
-            }
-        },
-        ffmpeg,
-        ffprobe,
+        bin_dir: paths.bin().display().to_string(),
+        ytdlp: ytdlp.version.clone(),
+        ffmpeg: ffmpeg.version.clone(),
+        ffprobe: ffprobe.version.clone(),
+        binaries: vec![ytdlp, ffmpeg, ffprobe],
     }
+}
+
+#[tauri::command]
+fn app_info(paths: tauri::State<'_, AppPaths>) -> AppInfo {
+    app_info_for(&paths)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -225,36 +247,7 @@ mod tests {
     #[test]
     fn app_info_reports_dev_root_and_bundled_binaries() {
         let paths = AppPaths::current().unwrap();
-        let info = AppInfo {
-            root: paths.root().display().to_string(),
-            support_root: paths.support().display().to_string(),
-            install_kind: match paths.kind() {
-                paths::InstallKind::Portable => "portable",
-                paths::InstallKind::Installed => "installed",
-            }
-            .to_string(),
-            writable: paths.ensure_layout().is_ok(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            update_configured: updater::is_configured(),
-            ytdlp: {
-                #[cfg(target_os = "macos")]
-                {
-                    binaries::ytdlp_version(&paths)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    binaries::read_version(&paths.ytdlp(), "--version")
-                        .as_deref()
-                        .and_then(binaries::parse_ytdlp_version)
-                }
-            },
-            ffmpeg: binaries::read_version(&paths.ffmpeg(), "-version")
-                .as_deref()
-                .and_then(binaries::parse_ffmpeg_version),
-            ffprobe: binaries::read_version(&paths.ffprobe(), "-version")
-                .as_deref()
-                .and_then(binaries::parse_ffmpeg_version),
-        };
+        let info = app_info_for(&paths);
 
         assert!(info.writable, "project root must be writable");
         assert!(
@@ -263,6 +256,8 @@ mod tests {
             info.root
         );
         // CI does not ship the ~230 MB binaries; only check versions when they are present.
+        assert_eq!(info.bin_dir, paths.bin().display().to_string());
+        assert_eq!(info.binaries.len(), 3);
         if paths.ytdlp().is_file() {
             let ytdlp = info.ytdlp.expect("yt-dlp version not detected");
             assert!(

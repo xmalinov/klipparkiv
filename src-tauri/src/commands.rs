@@ -905,10 +905,7 @@ async fn run_task(app: AppHandle, id: String, exe: PathBuf, argv: Vec<OsString>)
             store.finish(
                 &id,
                 STATE_FAILED,
-                Some(i18n::tf(
-                    || format!("не удалось запустить yt-dlp: {error}"),
-                    || format!("could not start yt-dlp: {error}"),
-                )),
+                Some(process::spawn_error("yt-dlp", &exe, &error)),
             );
             if let Some(snapshot) = store.snapshot(&id) {
                 emit_state(&app, &snapshot);
@@ -1141,12 +1138,7 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
     let output = process::prepare(&exe, &[OsString::from("--update")])
         .output()
         .await
-        .map_err(|error| {
-            i18n::tf(
-                || format!("не удалось запустить обновление: {error}"),
-                || format!("could not start the update: {error}"),
-            )
-        })?;
+        .map_err(|error| process::spawn_error("yt-dlp", &exe, &error))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1167,15 +1159,13 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
         )
     })?;
 
-    let version = crate::binaries::read_version(&exe, "--version")
-        .as_deref()
-        .and_then(crate::binaries::parse_ytdlp_version)
-        .ok_or_else(|| {
-            i18n::t(
-                "версия после обновления не определена",
-                "could not detect the version after the update",
-            )
-        })?;
+    let line = crate::binaries::read_version(&exe, "--version")?;
+    let version = crate::binaries::parse_ytdlp_version(&line).ok_or_else(|| {
+        i18n::tf(
+            || format!("не удалось разобрать вывод: {line}"),
+            || format!("could not parse the output: {line}"),
+        )
+    })?;
     #[cfg(target_os = "macos")]
     {
         let paths = app.state::<AppPaths>();

@@ -56,12 +56,7 @@ pub async fn probe(exe: &Path, url: &str) -> Result<VideoInfo, String> {
     let output = crate::process::prepare(exe, &probe_args(url))
         .output()
         .await
-        .map_err(|error| {
-            i18n::tf(
-                || format!("не удалось запустить yt-dlp: {error}"),
-                || format!("could not start yt-dlp: {error}"),
-            )
-        })?;
+        .map_err(|error| crate::process::spawn_error("yt-dlp", exe, &error))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

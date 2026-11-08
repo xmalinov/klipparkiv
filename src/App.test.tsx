@@ -8,14 +8,39 @@ const listen = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
+const binaries = [
+  {
+    name: "yt-dlp",
+    path: "C:\\apps\\klipparkiv\\bin\\yt-dlp.exe",
+    version: "2026.10.26",
+    error: null,
+  },
+  {
+    name: "ffmpeg",
+    path: "C:\\apps\\klipparkiv\\bin\\ffmpeg.exe",
+    version: "2026-10-29",
+    error: null,
+  },
+  {
+    name: "ffprobe",
+    path: "C:\\apps\\klipparkiv\\bin\\ffprobe.exe",
+    version: "2026-10-29",
+    error: null,
+  },
+];
+
 const info = {
   root: "C:\\apps\\klipparkiv",
+  supportRoot: "C:\\apps\\klipparkiv\\data",
+  installKind: "portable" as const,
   writable: true,
   version: "1.1.0",
   updateConfigured: true,
+  binDir: "C:\\apps\\klipparkiv\\bin",
   ytdlp: "2026.10.26",
   ffmpeg: "2026-10-29",
   ffprobe: "2026-10-29",
+  binaries,
 };
 
 describe("App", () => {
@@ -41,13 +66,28 @@ describe("App", () => {
     expect(invoke).toHaveBeenCalledWith("app_info");
   });
 
-  it("warns about missing binaries", async () => {
-    invoke.mockResolvedValue({ ...info, ytdlp: null });
+  it("warns about missing binaries with the path and the reason", async () => {
+    const error = "файл не найден: C:\\apps\\klipparkiv\\bin\\yt-dlp.exe";
+    invoke.mockResolvedValue({
+      ...info,
+      ytdlp: null,
+      binaries: info.binaries.map((binary) =>
+        binary.name === "yt-dlp"
+          ? { ...binary, version: null, error }
+          : binary,
+      ),
+    });
 
     render(<App />);
 
     expect(
-      await screen.findByText("Не найдены в bin: yt-dlp"),
+      await screen.findByText(
+        "В папке C:\\apps\\klipparkiv\\bin не найдены: yt-dlp",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(error)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Распакуйте архив целиком/),
     ).toBeInTheDocument();
   });
 

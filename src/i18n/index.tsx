@@ -19,7 +19,9 @@ export const ru = {
   "app.settings": "Настройки",
   "app.environmentError": "Не удалось прочитать окружение: {error}",
   "app.notWritable": "Нет прав на запись в папку приложения",
-  "app.missingBinaries": "Не найдены в bin: {names}",
+  "app.missingBinaries": "В папке {dir} не найдены: {names}",
+  "app.missingBinariesHint":
+    "Распакуйте архив целиком: рядом с klipparkiv.exe должна лежать папка bin.",
 
   "update.available": "Доступно обновление {version}",
   "update.ready": "Обновление {version} готово к установке",
@@ -227,7 +229,9 @@ export const en: Record<TranslationKey, string> = {
   "app.settings": "Settings",
   "app.environmentError": "Failed to read the environment: {error}",
   "app.notWritable": "The app folder is not writable",
-  "app.missingBinaries": "Not found in bin: {names}",
+  "app.missingBinaries": "Not found in {dir}: {names}",
+  "app.missingBinariesHint":
+    "Unpack the whole archive: the bin folder must sit next to klipparkiv.exe.",
 
   "update.available": "Update {version} is available",
   "update.ready": "Update {version} is ready to install",

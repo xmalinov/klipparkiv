@@ -1,11 +1,32 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::i18n;
+
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Result of checking one bundled binary. `error` explains why the version is
+/// missing, so the UI can show the path and the OS message instead of a bare
+/// "not found".
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BinaryStatus {
+    pub name: String,
+    pub path: String,
+    pub version: Option<String>,
+    pub error: Option<String>,
+}
+
+/// `C:\app\bin\yt-dlp.exe` -> `yt-dlp`.
+pub fn tool_name(exe: &Path) -> String {
+    exe.file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| exe.display().to_string())
+}
 
 /// `yt-dlp --version` prints exactly one line, e.g. `2026.08.19`.
 pub fn parse_ytdlp_version(stdout: &str) -> Option<String> {
@@ -30,17 +51,105 @@ pub fn parse_ffmpeg_version(stdout: &str) -> Option<String> {
 }
 
 /// Runs a binary and returns its first output line, hidden from the console.
-pub fn read_version(exe: &Path, arg: &str) -> Option<String> {
+///
+/// Failures keep enough context for the user to act on: the executable path, the
+/// OS error and the last stderr line.
+pub fn read_version(exe: &Path, arg: &str) -> Result<String, String> {
+    if !exe.is_file() {
+        return Err(i18n::tf(
+            || format!("файл не найден: {}", exe.display()),
+            || format!("file not found: {}", exe.display()),
+        ));
+    }
+
     let mut command = Command::new(exe);
     command.arg(arg);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
-    let output = command.output().ok()?;
+    let output = command
+        .output()
+        .map_err(|error| crate::process::spawn_error(&tool_name(exe), exe, &error))?;
+
     if !output.status.success() {
-        return None;
+        let code = output
+            .status
+            .code()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| output.status.to_string());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .map(|line| format!(": {}", line.trim()))
+            .unwrap_or_default();
+        return Err(i18n::tf(
+            || format!("завершился с кодом {code}{detail}"),
+            || format!("exited with code {code}{detail}"),
+        ));
     }
+
     let text = String::from_utf8_lossy(&output.stdout);
-    Some(text.lines().next()?.trim().to_string())
+    text.lines()
+        .next()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .ok_or_else(|| {
+            i18n::t(
+                "команда не вернула версию",
+                "the command returned no version",
+            )
+        })
+}
+
+/// Reads the first line and parses the version, keeping the diagnostic when
+/// either step fails.
+pub fn inspect(
+    name: &str,
+    exe: &Path,
+    arg: &str,
+    parse: fn(&str) -> Option<String>,
+) -> BinaryStatus {
+    let path = exe.display().to_string();
+    match read_version(exe, arg) {
+        Ok(line) => {
+            let version = parse(&line);
+            let error = version.is_none().then(|| {
+                i18n::tf(
+                    || format!("не удалось разобрать вывод: {line}"),
+                    || format!("could not parse the output: {line}"),
+                )
+            });
+            BinaryStatus {
+                name: name.to_string(),
+                path,
+                version,
+                error,
+            }
+        }
+        Err(error) => BinaryStatus {
+            name: name.to_string(),
+            path,
+            version: None,
+            error: Some(error),
+        },
+    }
+}
+
+/// Builds a status without launching the binary, for cached versions.
+#[cfg(target_os = "macos")]
+pub fn status(
+    name: &str,
+    exe: &Path,
+    version: Option<String>,
+    error: Option<String>,
+) -> BinaryStatus {
+    BinaryStatus {
+        name: name.to_string(),
+        path: exe.display().to_string(),
+        version,
+        error,
+    }
 }
 
 /// On macOS the bundled yt-dlp is read-only signed code. Keep a managed copy
@@ -106,14 +215,19 @@ fn read_cached_version(path: std::path::PathBuf) -> Option<String> {
 /// Reads the yt-dlp version without launching the 36 MB PyInstaller bundle
 /// when a cached version is available.
 #[cfg(target_os = "macos")]
-pub fn ytdlp_version(paths: &crate::paths::AppPaths) -> Option<String> {
-    read_cached_version(paths.managed_bin().join("yt-dlp.version"))
+pub fn ytdlp_version(paths: &crate::paths::AppPaths) -> Result<String, String> {
+    if let Some(version) = read_cached_version(paths.managed_bin().join("yt-dlp.version"))
         .or_else(|| read_cached_version(paths.bin().join("yt-dlp.version")))
-        .or_else(|| {
-            read_version(&paths.ytdlp(), "--version")
-                .as_deref()
-                .and_then(parse_ytdlp_version)
-        })
+    {
+        return Ok(version);
+    }
+    let line = read_version(&paths.ytdlp(), "--version")?;
+    parse_ytdlp_version(&line).ok_or_else(|| {
+        i18n::tf(
+            || format!("не удалось разобрать вывод: {line}"),
+            || format!("could not parse the output: {line}"),
+        )
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -188,6 +302,34 @@ mod tests {
     fn ignores_unrelated_output() {
         assert_eq!(parse_ffmpeg_version("no ffmpeg here"), None);
         assert_eq!(parse_ffmpeg_version(""), None);
+    }
+
+    #[test]
+    fn missing_binary_error_names_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("yt-dlp.exe");
+
+        let error = read_version(&exe, "--version").unwrap_err();
+
+        assert!(error.contains("yt-dlp.exe"), "{error}");
+    }
+
+    #[test]
+    fn inspect_keeps_the_error_for_a_missing_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("ffmpeg.exe");
+
+        let status = inspect("ffmpeg", &exe, "-version", parse_ffmpeg_version);
+
+        assert_eq!(status.name, "ffmpeg");
+        assert_eq!(status.path, exe.display().to_string());
+        assert!(status.version.is_none());
+        assert!(status.error.unwrap().contains("ffmpeg.exe"));
+    }
+
+    #[test]
+    fn tool_name_strips_the_extension() {
+        assert_eq!(tool_name(Path::new(r"C:\apps\bin\yt-dlp.exe")), "yt-dlp");
     }
 
     #[cfg(target_os = "macos")]

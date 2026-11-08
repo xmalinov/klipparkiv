@@ -2,6 +2,8 @@ use std::ffi::OsString;
 use std::path::Path;
 use tokio::process::Command;
 
+use crate::i18n;
+
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -21,6 +23,78 @@ pub fn prepare(exe: &Path, args: &[OsString]) -> Command {
     // kills the whole tree instead of only the parent.
     command.process_group(0);
     command
+}
+
+/// Explains a failed spawn: the OS message alone ("the system cannot find the
+/// path specified") does not tell the user which file or folder is wrong, so
+/// the tool name, the full path and a likely cause are appended.
+pub fn spawn_error(tool: &str, exe: &Path, error: &std::io::Error) -> String {
+    #[cfg(windows)]
+    let hint = match error.raw_os_error() {
+        Some(2) => i18n::t(
+            "файл не найден — проверьте, что он лежит в папке bin",
+            "file not found — check that it is present in the bin folder",
+        ),
+        Some(3) => i18n::t(
+            "путь не найден — папки bin нет, либо приложение запущено не из своей папки",
+            "path not found — the bin folder is missing, or the app was started from another folder",
+        ),
+        Some(5) | Some(225) => i18n::t(
+            "доступ запрещён — файл может блокировать антивирус",
+            "access denied — antivirus may be blocking the file",
+        ),
+        Some(193) => i18n::t(
+            "это не приложение Windows x64 — файл повреждён или собран для другой системы",
+            "this is not a Windows x64 executable — the file is damaged or built for another system",
+        ),
+        Some(206) => i18n::t(
+            "слишком длинный путь — перенесите приложение ближе к корню диска",
+            "the path is too long — move the app closer to the drive root",
+        ),
+        _ => String::new(),
+    };
+
+    #[cfg(not(windows))]
+    let hint = match error.raw_os_error() {
+        Some(2) => i18n::t(
+            "файл или путь не найден — проверьте папку bin",
+            "file or path not found — check the bin folder",
+        ),
+        Some(13) => i18n::t(
+            "доступ запрещён — проверьте права на файл",
+            "access denied — check the file permissions",
+        ),
+        Some(8) => i18n::t(
+            "файл не является исполняемым — он повреждён или собран для другой системы",
+            "the file is not executable — it is damaged or built for another system",
+        ),
+        Some(36) => i18n::t(
+            "слишком длинный путь — перенесите приложение в более короткий путь",
+            "the path is too long — move the app to a shorter path",
+        ),
+        _ => String::new(),
+    };
+
+    let suffix = if hint.is_empty() {
+        String::new()
+    } else {
+        format!(" · {hint}")
+    };
+
+    i18n::tf(
+        || {
+            format!(
+                "не удалось запустить {tool}: {error} · файл: {}{suffix}",
+                exe.display()
+            )
+        },
+        || {
+            format!(
+                "could not start {tool}: {error} · file: {}{suffix}",
+                exe.display()
+            )
+        },
+    )
 }
 
 /// Kills the whole process tree. yt-dlp spawns ffmpeg, so killing the parent
@@ -93,6 +167,21 @@ mod tests {
         assert_eq!(std_command.get_program(), exe.as_os_str());
         let args: Vec<_> = std_command.get_args().collect();
         assert_eq!(args, vec![out.as_os_str()]);
+    }
+
+    #[test]
+    fn spawn_error_names_the_tool_path_and_likely_cause() {
+        let exe = PathBuf::from(r"C:\apps\klipparkiv\bin\yt-dlp.exe");
+        let error = std::io::Error::from_raw_os_error(3);
+        let message = spawn_error("yt-dlp", &exe, &error);
+
+        assert!(message.contains("yt-dlp"), "{message}");
+        assert!(
+            message.contains(r"C:\apps\klipparkiv\bin\yt-dlp.exe"),
+            "{message}"
+        );
+        assert!(message.contains("os error 3"), "{message}");
+        assert!(message.contains("bin"), "{message}");
     }
 
     #[cfg(unix)]
