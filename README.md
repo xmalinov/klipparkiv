@@ -117,8 +117,27 @@ system player. That is the next major feature, not part of this release.
   on every edition; if it is missing, install the
   [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 - macOS 11+ on Intel or Apple Silicon.
-- About 80–100 MB to download and about 240 MB on disk, plus your media.
+- About 80–105 MB to download and about 240 MB on disk, plus your media.
 - A folder the app can write to.
+
+### Troubleshooting
+
+**"Not found in bin" or "could not start yt-dlp".** The app reads
+`yt-dlp.exe`, `ffmpeg.exe` and `ffprobe.exe` from the `bin` folder next to
+`klipparkiv.exe`. Since 1.6.2 the banner names the exact path and the Windows
+error for every file it cannot use.
+
+- If the path points to a temporary folder, the exe was started from inside the
+  ZIP. Quit the app from the tray, unpack the whole archive and run
+  `klipparkiv.exe` from the unpacked folder.
+- If `bin` is missing, unpack the archive again. Do not move the exe alone.
+- If the files exist but the error mentions access or a damaged file, add the
+  app folder to the antivirus exclusions, restore the file from quarantine and
+  download the release zip again.
+- After moving or renaming the app folder, quit it completely (tray → **Quit**)
+  and start it from the new location; a running instance keeps the old path.
+- The in-app yt-dlp update refreshes an existing file; it cannot restore a
+  deleted `bin` folder.
 
 ### Uninstall
 
@@ -346,8 +365,28 @@ for setup and checks. Bundled components keep their own licenses; see
   редакции; если его нет, установите
   [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 - macOS 11+ на Intel или Apple Silicon.
-- Около 80–100 МБ на скачивание и около 240 МБ на диске, плюс ваши медиа.
+- Около 80–105 МБ на скачивание и около 240 МБ на диске, плюс ваши медиа.
 - Папка с правом записи.
+
+### Если что-то не работает
+
+**«В папке … не найдены…» или «не удалось запустить yt-dlp».** Приложение читает
+`yt-dlp.exe`, `ffmpeg.exe` и `ffprobe.exe` из папки `bin` рядом с
+`klipparkiv.exe`. Начиная с 1.6.2 предупреждение показывает точный путь и ошибку
+Windows для каждого файла, который не удалось использовать.
+
+- Если путь ведёт во временную папку, exe запущен из ZIP. Выйдите из приложения
+  через трей, распакуйте архив целиком и запустите `klipparkiv.exe` из
+  распакованной папки.
+- Если папки `bin` нет, распакуйте архив заново. Не переносите один exe.
+- Если файлы есть, но ошибка говорит о доступе или повреждении, добавьте папку
+  приложения в исключения антивируса, восстановите файл из карантина и скачайте
+  архив релиза заново.
+- После переноса или переименования папки полностью закройте приложение
+  (трей → **«Выход»**) и запустите его из нового места: работающий экземпляр
+  сохраняет старый путь.
+- Обновление yt-dlp из настроек обновляет существующий файл и не восстановит
+  удалённую папку `bin`.
 
 ### Удаление
 

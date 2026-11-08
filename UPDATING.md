@@ -48,22 +48,22 @@ only the existing updater signing key.
 
    ```bash
    npm run check:version
-   node scripts/check-version.mjs --tag v1.6.1
+   node scripts/check-version.mjs --tag v1.6.2
    ```
 
 5. Commit, then push `main` and the tag:
 
    ```bash
-   git tag -a v1.6.1 -m "Klipparkiv 1.6.1"
-   git push origin main v1.6.1
+   git tag -a v1.6.2 -m "Klipparkiv 1.6.2"
+   git push origin main v1.6.2
    ```
 
 6. The Release workflow builds Windows and both macOS bundles, then creates a
-   **draft** release titled `Klipparkiv 1.6.1` with the changelog body. Check
+   **draft** release titled `Klipparkiv 1.6.2` with the changelog body. Check
    the title, notes and artifacts, then publish it:
 
    ```bash
-   gh release edit v1.6.1 --draft=false
+   gh release edit v1.6.2 --draft=false
    ```
 
 7. `releases/latest` and the landing page start pointing at the new version only
@@ -84,7 +84,7 @@ Refresh the lockfile after the `Cargo.toml` bump, then check:
 
 ```bash
 cargo check --manifest-path src-tauri/Cargo.toml
-node scripts/check-version.mjs --tag v1.6.1
+node scripts/check-version.mjs --tag v1.6.2
 ```
 
 The check refuses a mismatch between any of the version files and the tag.
