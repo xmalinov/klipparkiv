@@ -329,7 +329,10 @@ mod tests {
 
     #[test]
     fn tool_name_strips_the_extension() {
-        assert_eq!(tool_name(Path::new(r"C:\apps\bin\yt-dlp.exe")), "yt-dlp");
+        // A bare file name keeps the test valid on both Windows and macOS:
+        // backslash is not a path separator on Unix.
+        assert_eq!(tool_name(Path::new("yt-dlp.exe")), "yt-dlp");
+        assert_eq!(tool_name(Path::new("ffmpeg")), "ffmpeg");
     }
 
     #[cfg(target_os = "macos")]
