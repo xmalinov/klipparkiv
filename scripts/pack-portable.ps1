@@ -19,6 +19,15 @@ if (-not (Test-Path $bin)) {
     throw "bin\ not found: $bin"
 }
 
+$models = Join-Path $bin "models"
+$sourceModels = Join-Path $root "src-tauri\resources\bin\models"
+if (Test-Path $sourceModels) {
+    if (Test-Path $models) { Remove-Item $models -Recurse -Force }
+    Copy-Item $sourceModels $models -Recurse -Force
+} elseif (-not (Test-Path $models)) {
+    throw "Beat grid models not found in bin\models or src-tauri\resources\bin\models"
+}
+
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Path $out | Out-Null
 

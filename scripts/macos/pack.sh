@@ -25,6 +25,11 @@ cp "$ROOT/PRIVACY.md" "$APP/Contents/Resources/licenses/PRIVACY.md"
 cp "$ROOT/SECURITY.md" "$APP/Contents/Resources/licenses/SECURITY.md"
 cp -R "$ROOT/LICENSES" "$APP/Contents/Resources/licenses/LICENSES"
 
+if [[ -d "$ROOT/src-tauri/resources/bin/models" ]]; then
+  mkdir -p "$APP/Contents/Resources/bin/models"
+  cp -R "$ROOT/src-tauri/resources/bin/models/." "$APP/Contents/Resources/bin/models/"
+fi
+
 bash "$HERE/sign-app.sh" "$APP"
 bash "$HERE/verify-app.sh" "$APP" "$VERSION"
 bash "$HERE/make-dmg.sh" "$APP" "$OUT/$PREFIX.dmg"

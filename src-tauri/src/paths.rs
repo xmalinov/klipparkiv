@@ -225,6 +225,16 @@ impl AppPaths {
         self.bin.join(exe_name("ffprobe"))
     }
 
+    /// Bundled ONNX models for local analysis.
+    pub fn models(&self) -> PathBuf {
+        self.bin.join("models")
+    }
+
+    /// Cached per-track analysis results.
+    pub fn analysis_cache(&self) -> PathBuf {
+        self.data().join("analysis")
+    }
+
     /// Creates the folders the app owns and proves the support root is writable.
     /// Fails instead of silently falling back to a system profile.
     pub fn ensure_layout(&self) -> io::Result<()> {

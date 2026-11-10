@@ -24,6 +24,7 @@
     "pack:macos": "bash scripts/macos/pack.sh",
     "binaries:mac-x64": "node scripts/fetch-binaries.mjs mac-x64",
     "binaries:mac-arm64": "node scripts/fetch-binaries.mjs mac-arm64",
+    "models:fetch": "node scripts/fetch-models.mjs",
     "check:version": "node scripts/check-version.mjs",
     "manifest:merge": "node scripts/merge-update-manifest.mjs",
     "tauri": "tauri"

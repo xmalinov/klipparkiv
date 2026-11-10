@@ -11,6 +11,7 @@ pub struct LoopSettings {
     pub start: f64,
     pub end: f64,
     pub pre_roll: bool,
+    pub pre_roll_secs: f64,
 }
 
 pub struct LoopCache {

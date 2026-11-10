@@ -1,7 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatUploadDate, formatViews } from "./tasks";
+import {
+  applyProgress,
+  formatDuration,
+  formatUploadDate,
+  formatViews,
+  type TaskSnapshot,
+} from "./tasks";
 
 describe("task formatters", () => {
+  it("keeps the last known speed when a progress event omits it", () => {
+    const task: TaskSnapshot = {
+      id: "1",
+      url: "https://example.com",
+      title: null,
+      mode: "audio",
+      clip: false,
+      state: "running",
+      percent: 10,
+      speedBps: 2_000_000,
+      etaSecs: 30,
+      error: null,
+      playlistIndex: null,
+      playlistCount: null,
+      outputPath: null,
+    };
+    const [next] = applyProgress([task], {
+      id: "1",
+      percent: 20,
+      speedBps: null,
+      etaSecs: null,
+      playlistIndex: null,
+      playlistCount: null,
+    });
+    expect(next.percent).toBe(20);
+    expect(next.speedBps).toBe(2_000_000);
+    expect(next.etaSecs).toBe(30);
+  });
+
   it("formats durations", () => {
     expect(formatDuration(213)).toBe("3:33");
     expect(formatDuration(3723)).toBe("1:02:03");

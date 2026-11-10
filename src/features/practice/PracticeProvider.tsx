@@ -8,11 +8,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import type { LibraryItem } from "../../api/library";
 import {
   DEFAULT_PRACTICE_STATE,
+  onPracticeAnalysisDone,
+  onPracticeAnalysisError,
+  onPracticeAnalysisProgress,
   onPracticeError,
   onPracticePosition,
+  practiceAnalysisCancel,
+  practiceAnalysisGet,
+  practiceAnalysisStart,
   practiceClose,
   practiceOpen,
   practicePause,
@@ -20,16 +27,21 @@ import {
   practiceRecent,
   practiceRecentHide,
   practiceSeek,
+  practiceSetGrid,
   practiceSetLoop,
+  practiceSetMetronome,
   practiceSetPitch,
   practiceSetSpeed,
   practiceSetVolume,
   practiceStateSave,
   practiceWaveform,
+  type GridPayload,
+  type PracticeAnalysis,
   type PracticeRegion,
   type PracticeSnapshot,
   type PracticeState,
   type RegionKind,
+  type SnapMode,
   type Waveform,
 } from "../../api/practice";
 
@@ -58,13 +70,30 @@ export interface Selection {
   end: number;
 }
 
+export type AnalysisStatus = "idle" | "loading" | "ready" | "error";
+
+export interface PracticeGrid {
+  bpm: number;
+  beats: number[];
+  downbeats: number[];
+  barStarts: number[];
+  beatsPerBar: number;
+  barOffset: number;
+}
+
 interface PracticeContextValue {
   track: LibraryItem | null;
   state: PracticeState;
   snapshot: PracticeSnapshot;
   waveform: Waveform | null;
   waveformLoading: boolean;
+  opening: boolean;
   error: string | null;
+  analysis: PracticeAnalysis | null;
+  analysisStatus: AnalysisStatus;
+  analysisProgress: number;
+  analysisError: string | null;
+  grid: PracticeGrid | null;
   recent: LibraryItem[];
   selection: Selection | null;
   duration: number;
@@ -93,6 +122,17 @@ interface PracticeContextValue {
   selectRegion: (id: string) => Promise<void>;
   selectRegionByIndex: (index: number) => Promise<void>;
   setPreRoll: (enabled: boolean) => Promise<void>;
+  snapTime: (time: number, mode?: SnapMode) => number;
+  loopBars: (bars: number) => Promise<void>;
+  setBpmScale: (scale: number) => Promise<void>;
+  setBeatsPerBar: (beats: number) => Promise<void>;
+  setBarOffset: (offset: number) => Promise<void>;
+  setSnapMode: (mode: SnapMode) => Promise<void>;
+  setMetronome: (enabled: boolean, volume?: number) => Promise<void>;
+  setCountIn: (enabled: boolean) => Promise<void>;
+  setManualBpm: (bpm: number | null) => Promise<void>;
+  setGridEnabled: (enabled: boolean) => Promise<void>;
+  startAnalysis: () => Promise<void>;
 }
 
 const EMPTY_SNAPSHOT: PracticeSnapshot = {
@@ -116,24 +156,165 @@ function sortRegions(regions: PracticeRegion[]): PracticeRegion[] {
   return [...regions].sort((left, right) => left.start - right.start);
 }
 
+export function nearestValue(values: number[], time: number): number | null {
+  if (values.length === 0) return null;
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (values[middle] < time) low = middle + 1;
+    else high = middle;
+  }
+  if (low === 0) return values[0];
+  if (low >= values.length) return values[values.length - 1];
+  return time - values[low - 1] <= values[low] - time
+    ? values[low - 1]
+    : values[low];
+}
+
+export function scaleBeats(beats: number[], scale: number): number[] {
+  if (scale === 2) {
+    const scaled: number[] = [];
+    for (let index = 0; index < beats.length; index += 1) {
+      scaled.push(beats[index]);
+      if (index + 1 < beats.length) {
+        scaled.push((beats[index] + beats[index + 1]) / 2);
+      }
+    }
+    return scaled;
+  }
+  if (scale === 0.5) {
+    return beats.filter((_, index) => index % 2 === 0);
+  }
+  return beats;
+}
+
+export function buildBarStarts(
+  beats: number[],
+  beatsPerBar: number,
+  barOffset: number,
+): number[] {
+  if (beats.length === 0) return [];
+  const bar = Math.max(1, Math.min(16, Math.round(beatsPerBar)));
+  const offset = Math.max(0, Math.min(bar - 1, Math.round(barOffset)));
+  const starts: number[] = [];
+  if (offset > 0) starts.push(0);
+  for (let index = offset; index < beats.length; index += bar) {
+    starts.push(beats[index]);
+  }
+  return starts.length > 0 ? starts : [beats[0]];
+}
+
+export function buildGrid(
+  analysis: PracticeAnalysis | null,
+  manualBpm: number | null,
+  duration: number,
+  bpmScale: number,
+  beatsPerBar: number,
+  barOffset: number,
+): PracticeGrid | null {
+  let sourceBeats: number[] = [];
+  let sourceBpm = 0;
+  if (manualBpm && manualBpm > 0 && duration > 0) {
+    const interval = 60 / manualBpm;
+    const count = Math.ceil(duration / interval) + 1;
+    sourceBeats = Array.from({ length: count }, (_, index) => index * interval);
+    sourceBpm = manualBpm;
+  } else if (analysis && analysis.beats.length >= 2 && analysis.bpm > 0) {
+    sourceBeats = analysis.beats;
+    sourceBpm = analysis.bpm;
+  }
+  if (sourceBeats.length < 2) return null;
+  const beats = scaleBeats(sourceBeats, bpmScale);
+  if (beats.length < 2) return null;
+  const barStarts = buildBarStarts(beats, beatsPerBar, barOffset);
+  return {
+    bpm: sourceBpm * bpmScale,
+    beats,
+    downbeats: barStarts,
+    barStarts,
+    beatsPerBar,
+    barOffset,
+  };
+}
+
 export function PracticeProvider({ children }: { children: ReactNode }) {
   const [track, setTrack] = useState<LibraryItem | null>(null);
   const [state, setState] = useState<PracticeState>(DEFAULT_PRACTICE_STATE);
   const [snapshot, setSnapshot] = useState<PracticeSnapshot>(EMPTY_SNAPSHOT);
   const [waveform, setWaveform] = useState<Waveform | null>(null);
   const [waveformLoading, setWaveformLoading] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<LibraryItem[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [analysis, setAnalysis] = useState<PracticeAnalysis | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const positionRef = useRef(0);
   const selectionRef = useRef<Selection | null>(null);
   const stateRef = useRef(state);
   const trackRef = useRef<LibraryItem | null>(null);
+  const analysisRef = useRef<PracticeAnalysis | null>(null);
+  const gridRef = useRef<PracticeGrid | null>(null);
   const hydratedRef = useRef(false);
   const saveTimer = useRef<number | undefined>(undefined);
 
   stateRef.current = state;
   trackRef.current = track;
+  analysisRef.current = analysis;
+
+  const duration =
+    snapshot.durationSecs ?? track?.durationSecs ?? 0;
+
+  const grid = useMemo(
+    () =>
+      state.gridEnabled || state.manualBpm
+        ? buildGrid(
+            state.gridEnabled ? analysis : null,
+            state.manualBpm,
+            duration,
+            state.bpmScale,
+            state.beatsPerBar,
+            state.barOffset,
+          )
+        : null,
+    [
+      analysis,
+      duration,
+      state.barOffset,
+      state.beatsPerBar,
+      state.bpmScale,
+      state.gridEnabled,
+      state.manualBpm,
+    ],
+  );
+  gridRef.current = grid;
+  const durationRef = useRef(0);
+  durationRef.current = duration;
+
+  useEffect(() => {
+    if (!state.gridEnabled || !grid) {
+      practiceSetGrid(null).catch(() => {});
+      return;
+    }
+    const payload: GridPayload = {
+      bpm: grid.bpm,
+      beatsPerBar: grid.beatsPerBar,
+      barOffset: grid.barOffset,
+      beats: grid.beats,
+      downbeats: grid.downbeats,
+    };
+    practiceSetGrid(payload).catch((cause) => setError(String(cause)));
+  }, [grid, state.gridEnabled]);
+
+  useEffect(() => {
+    practiceSetMetronome(
+      state.metronomeEnabled,
+      state.metronomeVolume,
+    ).catch((cause) => setError(String(cause)));
+  }, [state.metronomeEnabled, state.metronomeVolume]);
 
   const updateSelection = useCallback((next: Selection | null) => {
     selectionRef.current = next;
@@ -185,6 +366,73 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const applyAnalysis = useCallback((next: PracticeAnalysis) => {
+    analysisRef.current = next;
+    setAnalysis(next);
+    setAnalysisProgress(1);
+    setAnalysisError(null);
+    setAnalysisStatus("ready");
+    if (!stateRef.current.gridCustomized) {
+      setState((current) => ({
+        ...current,
+        beatsPerBar: next.beatsPerBar || current.beatsPerBar,
+        barOffset: next.barOffset ?? 0,
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    let unlistenProgress: (() => void) | undefined;
+    let unlistenDone: (() => void) | undefined;
+    let unlistenError: (() => void) | undefined;
+
+    onPracticeAnalysisProgress((next) => {
+      if (trackRef.current?.path !== next.path) return;
+      setAnalysisProgress(next.progress);
+      if (next.stage !== "done") setAnalysisStatus("loading");
+    }).then((fn) => {
+      unlistenProgress = fn;
+    });
+    onPracticeAnalysisDone((next) => {
+      if (trackRef.current?.path !== next.path) return;
+      applyAnalysis(next);
+    }).then((fn) => {
+      unlistenDone = fn;
+    });
+    onPracticeAnalysisError((next) => {
+      if (trackRef.current?.path !== next.path) return;
+      setAnalysisStatus("error");
+      setAnalysisError(next.message);
+    }).then((fn) => {
+      unlistenError = fn;
+    });
+
+    return () => {
+      unlistenProgress?.();
+      unlistenDone?.();
+      unlistenError?.();
+    };
+  }, [applyAnalysis]);
+
+  const startAnalysis = useCallback(async () => {
+    const currentTrack = trackRef.current;
+    if (!currentTrack || !stateRef.current.gridEnabled) return;
+    setAnalysisStatus("loading");
+    setAnalysisProgress(0);
+    setAnalysisError(null);
+    try {
+      const cached = await practiceAnalysisGet(currentTrack.path);
+      if (cached) {
+        applyAnalysis(cached);
+        return;
+      }
+      await practiceAnalysisStart(currentTrack.path);
+    } catch (cause) {
+      setAnalysisStatus("error");
+      setAnalysisError(String(cause));
+    }
+  }, [applyAnalysis]);
+
   const saveNow = useCallback(async () => {
     const currentTrack = trackRef.current;
     if (!currentTrack || !hydratedRef.current) return;
@@ -216,16 +464,27 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
   const openTrack = useCallback(
     async (item: LibraryItem) => {
       if (item.kind !== "audio") return;
-      if (trackRef.current) await saveNow();
+      flushSync(() => setOpening(true));
+      if (trackRef.current) {
+        await practicePause().catch(() => {});
+        await saveNow();
+      }
       hydratedRef.current = false;
       setError(null);
       updateSelection(null);
       setWaveform(null);
+      setAnalysis(null);
+      analysisRef.current = null;
+      setAnalysisStatus("idle");
+      setAnalysisProgress(0);
+      setAnalysisError(null);
       try {
         const opened = await practiceOpen(item.path);
         const nextState = opened.state;
         setTrack(item);
+        trackRef.current = item;
         setState(nextState);
+        stateRef.current = nextState;
         setSnapshot({
           positionSecs: nextState.positionSecs,
           durationSecs: opened.durationSecs ?? item.durationSecs,
@@ -236,6 +495,9 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
         positionRef.current = nextState.positionSecs;
         hydratedRef.current = true;
         practiceStateSave(item.path, nextState).catch(() => {});
+        if (nextState.gridEnabled) {
+          startAnalysis();
+        }
         setWaveformLoading(true);
         practiceWaveform(item.path)
           .then((value) => setWaveform(value))
@@ -244,9 +506,11 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
         refreshRecent();
       } catch (cause) {
         setError(String(cause));
+      } finally {
+        setOpening(false);
       }
     },
-    [refreshRecent, saveNow, updateSelection],
+    [refreshRecent, saveNow, startAnalysis, updateSelection],
   );
 
   const close = useCallback(async () => {
@@ -258,11 +522,19 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     }
     hydratedRef.current = false;
     setTrack(null);
+    trackRef.current = null;
     setState(DEFAULT_PRACTICE_STATE);
     setSnapshot(EMPTY_SNAPSHOT);
     setWaveform(null);
+    setOpening(false);
+    setAnalysis(null);
+    analysisRef.current = null;
+    setAnalysisStatus("idle");
+    setAnalysisProgress(0);
+    setAnalysisError(null);
     updateSelection(null);
     positionRef.current = 0;
+    practiceAnalysisCancel().catch(() => {});
     refreshRecent();
   }, [refreshRecent, saveNow]);
 
@@ -321,13 +593,110 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setBpmScale = useCallback(async (scale: number) => {
+    const next = scale <= 0.75 ? 0.5 : scale >= 1.5 ? 2 : 1;
+    setState((current) => ({ ...current, bpmScale: next }));
+  }, []);
+
+  const setBeatsPerBar = useCallback(async (beats: number) => {
+    const next = Math.max(1, Math.min(16, Math.round(beats)));
+    setState((current) => ({
+      ...current,
+      beatsPerBar: next,
+      barOffset: current.barOffset % next,
+      gridCustomized: true,
+    }));
+  }, []);
+
+  const setBarOffset = useCallback(async (offset: number) => {
+    setState((current) => ({
+      ...current,
+      barOffset:
+        ((Math.round(offset) % current.beatsPerBar) + current.beatsPerBar) %
+        current.beatsPerBar,
+      gridCustomized: true,
+    }));
+  }, []);
+
+  const setSnapMode = useCallback(async (mode: SnapMode) => {
+    setState((current) => ({ ...current, snapMode: mode }));
+  }, []);
+
+  const setMetronome = useCallback(
+    async (enabled: boolean, volume?: number) => {
+      const nextVolume = Math.min(
+        1,
+        Math.max(0, volume ?? stateRef.current.metronomeVolume),
+      );
+      try {
+        await practiceSetMetronome(enabled, nextVolume);
+        setState((current) => ({
+          ...current,
+          metronomeEnabled: enabled,
+          metronomeVolume: nextVolume,
+        }));
+      } catch (cause) {
+        setError(String(cause));
+      }
+    },
+    [],
+  );
+
+  const setCountIn = useCallback(async (enabled: boolean) => {
+    setState((current) => ({ ...current, countIn: enabled }));
+    if (enabled && !stateRef.current.metronomeEnabled) {
+      await setMetronome(true, stateRef.current.metronomeVolume);
+    }
+  }, [setMetronome]);
+
+  const setManualBpm = useCallback(async (bpm: number | null) => {
+    setState((current) => ({
+      ...current,
+      manualBpm:
+        bpm === null || !Number.isFinite(bpm) || bpm <= 0
+          ? null
+          : Math.min(400, Math.max(20, bpm)),
+      gridCustomized: true,
+    }));
+  }, []);
+
+  const setGridEnabled = useCallback(async (enabled: boolean) => {
+    setState((current) => ({ ...current, gridEnabled: enabled }));
+    if (!enabled) {
+      setAnalysis(null);
+      analysisRef.current = null;
+      setAnalysisStatus("idle");
+      setAnalysisProgress(0);
+      setAnalysisError(null);
+      practiceAnalysisCancel().catch(() => {});
+    }
+  }, []);
+
   const applyLoop = useCallback(
     async (enabled: boolean, region: PracticeRegion | null, preRoll: boolean) => {
       try {
+        const grid = gridRef.current;
+        const wantsPreRoll = preRoll || stateRef.current.countIn;
+        const preRollSecs = wantsPreRoll
+          ? grid && stateRef.current.countIn && grid.bpm > 0
+            ? (grid.beatsPerBar * 60) / grid.bpm
+            : 2
+          : 0;
+        setState((current) =>
+          current.preRollSecs === preRollSecs
+            ? current
+            : { ...current, preRollSecs },
+        );
         if (enabled && region) {
-          await practiceSetLoop(true, region.start, region.end, preRoll);
+          await practiceSetLoop(
+            true,
+            region.start,
+            region.end,
+            wantsPreRoll,
+            preRollSecs,
+          );
         } else {
-          await practiceSetLoop(false, null, null, preRoll);
+          await practiceSetLoop(false, null, null, wantsPreRoll, preRollSecs);
         }
       } catch (cause) {
         setError(String(cause));
@@ -336,6 +705,18 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const snapTime = useCallback((time: number, mode?: SnapMode) => {
+    const grid = gridRef.current;
+    const current = stateRef.current;
+    const snapMode = mode ?? current.snapMode;
+    const maximum = durationRef.current > 0 ? durationRef.current : time;
+    const clamped = Math.max(0, Math.min(maximum, time));
+    if (!grid || snapMode === "free") return clamped;
+    const values = snapMode === "beat" ? grid.beats : grid.barStarts;
+    const snapped = nearestValue(values, clamped);
+    if (snapped === null) return clamped;
+    return Math.max(0, Math.min(maximum, snapped));
+  }, []);
   const setLoopEnabled = useCallback(
     async (enabled: boolean) => {
       const active =
@@ -380,12 +761,14 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
 
   const setLoopBoundary = useCallback(
     async (which: "start" | "end") => {
-      const position = positionRef.current;
+      const position = snapTime(positionRef.current);
       const base = selectionRef.current ?? { start: position, end: position };
+      const baseStart = snapTime(base.start);
+      const baseEnd = snapTime(base.end);
       const next =
         which === "start"
-          ? { start: position, end: Math.max(position, base.end) }
-          : { start: Math.min(base.start, position), end: position };
+          ? { start: position, end: Math.max(position, baseEnd) }
+          : { start: Math.min(baseStart, position), end: position };
       updateSelection(next);
       if (next.end - next.start < 0.1) return;
       const region: PracticeRegion = {
@@ -407,11 +790,59 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       }));
       await applyLoop(true, region, stateRef.current.preRoll);
     },
+    [applyLoop, snapTime, updateSelection],
+  );
+
+  const loopBars = useCallback(
+    async (bars: number) => {
+      const grid = gridRef.current;
+      if (!grid || grid.barStarts.length === 0) {
+        setError("Beat grid is not ready");
+        return;
+      }
+      const requested = Math.max(1, Math.round(bars));
+      const starts = grid.barStarts;
+      const position = positionRef.current;
+      let index = 0;
+      for (let candidate = 0; candidate < starts.length; candidate += 1) {
+        if (starts[candidate] <= position + 0.001) index = candidate;
+        else break;
+      }
+      let start = starts[index];
+      let end =
+        index + requested < starts.length
+          ? starts[index + requested]
+          : durationRef.current;
+      if (!(end > start)) {
+        const fallback = Math.max(0, starts.length - requested);
+        start = starts[fallback];
+        end = durationRef.current;
+      }
+      if (!(end > start)) return;
+      const region: PracticeRegion = {
+        id: "ab",
+        name: `${requested} bar${requested === 1 ? "" : "s"}`,
+        kind: "custom",
+        color: REGION_COLORS.custom,
+        start,
+        end,
+      };
+      setState((current) => ({
+        ...current,
+        regions: sortRegions([
+          ...current.regions.filter((entry) => entry.id !== "ab"),
+          region,
+        ]),
+        activeRegionId: "ab",
+        loopEnabled: true,
+      }));
+      updateSelection({ start, end });
+      await applyLoop(true, region, stateRef.current.countIn);
+    },
     [applyLoop, updateSelection],
   );
 
-  const clearLoop = useCallback(async () => {
-    setState((current) => ({
+  const clearLoop = useCallback(async () => {    setState((current) => ({
       ...current,
       regions: current.regions.filter((region) => region.id !== "ab"),
       activeRegionId:
@@ -546,9 +977,6 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     [applyLoop, updateSelection],
   );
 
-  const duration =
-    snapshot.durationSecs ?? track?.durationSecs ?? 0;
-
   const value = useMemo<PracticeContextValue>(
     () => ({
       track,
@@ -556,10 +984,16 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       snapshot,
       waveform,
       waveformLoading,
+      opening,
       error,
       recent,
       selection,
       duration,
+      analysis,
+      analysisStatus,
+      analysisProgress,
+      analysisError,
+      grid,
       openTrack,
       hideRecent,
       close,
@@ -581,15 +1015,32 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       selectRegion,
       selectRegionByIndex,
       setPreRoll,
+      snapTime,
+      loopBars,
+      setBpmScale,
+      setBeatsPerBar,
+      setBarOffset,
+      setSnapMode,
+      setMetronome,
+      setCountIn,
+      setManualBpm,
+      setGridEnabled,
+      startAnalysis,
     }),
     [
       addRegion,
+      analysis,
+      analysisError,
+      analysisProgress,
+      analysisStatus,
       close,
       deleteRegion,
       duration,
       error,
+      grid,
       openTrack,
       hideRecent,
+      loopBars,
       playPause,
       recent,
       saveSelectionAsRegion,
@@ -597,22 +1048,33 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       selectRegion,
       selectRegionByIndex,
       selection,
+      setBarOffset,
+      setBeatsPerBar,
+      setBpmScale,
+      setCountIn,
       setLoopBoundary,
       setLoopEnabled,
       loopRegion,
       clearLoop,
+      setManualBpm,
+      setGridEnabled,
+      setMetronome,
       nudgeLoop,
       setPitch,
       setPreRoll,
+      setSnapMode,
       setSpeed,
       setVolume,
+      snapTime,
       snapshot,
+      startAnalysis,
       state,
       track,
       updateRegion,
       updateSelection,
       waveform,
       waveformLoading,
+      opening,
     ],
   );
 

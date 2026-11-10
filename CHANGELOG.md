@@ -10,7 +10,7 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
-### [1.7.0] — 2026-11-10
+### [1.7.0] — 2026-11-11
 
 Practice player release. Download and library behaviour is unchanged.
 
@@ -21,9 +21,15 @@ Practice player release. Download and library behaviour is unchanged.
 - Speed 0.25–2.0 without pitch change, and pitch ±12 semitones plus cents,
   independent of speed.
 - A-B loops and named regions (intro, verse, chorus, solo, bridge, outro,
-  custom) with a 2 s pre-roll.
+  custom) with a 2 s pre-roll or a one-bar count-in.
 - Short loops play seamlessly from memory; loops longer than 2 minutes restart
   the decoder with a short gap.
+- BPM and beat-grid analysis with the bundled Beat This! small model; results
+  are cached in `data\analysis`.
+- Bar grid with 2/3/4/6/8 beats per bar, bar-start correction, half/double
+  tempo correction, and a manual BPM fallback.
+- Bar-snapped loop creation (1/2/4/8 bars), snap-to-beat/bar/free dragging, and
+  a metronome with downbeat accents and count-in.
 - Keyboard shortcuts, a help sheet, a mini-player and a recent-tracks list.
 - Per-track state (position, speed, pitch, regions, active loop) in SQLite.
   State is reset when the file changes on disk.
@@ -61,13 +67,27 @@ Practice player release. Download and library behaviour is unchanged.
 - Region and recent lists no longer scroll internally: the whole Practice
   screen scrolls when the window is too short.
 - Removed the redundant "st" suffix from the pitch value.
+- Opening a track no longer leaves the previous waveform on screen: Practice
+  shows an "Opening track…" preloader, pauses the previous session and hides
+  old analysis until the new track is ready.
+- ffmpeg/ffprobe child processes no longer flash console windows on Windows
+  when opening audio, building a waveform or analysing the beat grid.
+- The download queue keeps the last known speed and ETA when a progress update
+  omits them, so the speed column does not go blank.
+- Practice now uses the full content width instead of being capped at 1100 px.
+- Snap mode defaults to beat instead of bar; saved v1/v2 tracks migrate to beat,
+  while an explicit bar choice in v3 is preserved.
+- Reopening a track while its beat-grid analysis is still running no longer
+  resets the progress to 0; the existing job reports its current progress.
 
 #### Notes
 
-- Audio only in this release; video and spectrum/chord analysis are not part
-  of 1.7.0.
+- Audio only in this release; video, chord and note analysis are not part of
+  1.7.0. BPM/beat-grid analysis and the metronome are local, CPU-only features.
 - The audio engine is native (ffmpeg → Signalsmith Stretch → cpal), so the
   practice player is not limited by WebView audio codecs.
+- The bundled Beat This! small model adds about 11 MB to the portable build;
+  the larger model is not included.
 
 ### [1.6.2] — 2026-11-09
 
@@ -210,7 +230,7 @@ First public release.
 
 ## Русский
 
-### [1.7.0] — 2026-11-10
+### [1.7.0] — 2026-11-11
 
 Релиз практического плеера. Поведение загрузок и библиотеки не изменилось.
 
@@ -221,9 +241,15 @@ First public release.
 - Скорость 0.25–2.0 без изменения тона и тон ±12 полутонов плюс центы,
   независимо от скорости.
 - A-B лупы и именованные регионы (интро, куплет, припев, соло, бридж, аутро,
-  своё) с предроллом 2 с.
+  своё) с предроллом 2 с или отсчётом на один такт.
 - Короткие лупы играют бесшовно из памяти; лупы длиннее 2 минут перезапускают
   декодер с коротким разрывом.
+- Анализ BPM и сетки долей на встроенной малой модели Beat This!; результат
+  кэшируется в `data\analysis`.
+- Сетка тактов 2/3/4/6/8 долей, сдвиг первого такта, коррекция половинного и
+  двойного темпа, ручной BPM как запасной вариант.
+- Лупы по тактам (1/2/4/8), привязка перетаскивания к доле/такту или свободно,
+  метроном с акцентом на сильную долю и отсчёт.
 - Горячие клавиши, шпаргалка, мини-плеер и список недавних треков.
 - Состояние на трек (позиция, скорость, тон, регионы, активный луп) в SQLite.
   При изменении файла на диске состояние сбрасывается.
@@ -261,12 +287,27 @@ First public release.
 - Списки регионов и недавних больше не скроллятся внутри: при маленьком окне
   прокручивается весь экран Practice.
 - Убрал лишний суффикс «пт» у значения тона.
+- При открытии трека больше не остаётся волна предыдущего трека: Practice
+  показывает прелоадер «Открываю трек…», ставит прошлую сессию на паузу и
+  скрывает старый анализ до готовности нового.
+- Дочерние ffmpeg/ffprobe больше не показывают окна терминала на Windows при
+  открытии аудио, построении волны и анализе сетки.
+- Очередь загрузок сохраняет последнюю известную скорость и ETA, если
+  очередное обновление прогресса их не содержит; колонка скорости не пустеет.
+- Practice теперь занимает всю ширину контента, а не ограничен 1100 px.
+- Привязка по умолчанию — к доле, а не к такту; сохранённые треки v1/v2
+  переводятся на доли, явный выбор «к такту» в v3 сохраняется.
+- Повторное открытие трека во время построения сетки больше не сбрасывает
+  прогресс в 0: уже запущенная задача сообщает текущий прогресс.
 
 #### Примечания
 
-- В этом релизе только аудио; видео, спектр и анализ аккордов в 1.7.0 не входят.
+- В этом релизе только аудио; видео, аккорды и ноты в 1.7.0 не входят.
+  Анализ BPM и сетки долей, а также метроном работают локально на CPU.
 - Аудиодвижок нативный (ffmpeg → Signalsmith Stretch → cpal), поэтому плеер
   не зависит от аудиокодеков WebView.
+- Встроенная малая модель Beat This! добавляет около 11 МБ к портативной
+  сборке; большая модель не входит.
 
 ### [1.6.2] — 2026-11-09
 

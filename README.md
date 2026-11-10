@@ -83,7 +83,8 @@ to cut from the start or to the end. For a playlist, choose the whole list or on
 the linked video, optionally with an item range.
 
 Audio files open in the built-in **Practice** player: slow down, change pitch,
-loop a phrase, and mark sections. Video files and the system player are unchanged.
+loop a phrase, follow the beat grid and metronome, and mark sections. Video
+files and the system player are unchanged.
 
 ### Features
 
@@ -103,7 +104,8 @@ loop a phrase, and mark sections. Video files and the system player are unchange
   deterministic filenames instead, so a second clip is not blocked).
 - **Library** - covers, search, filters, sorting, open in Practice or the system player.
 - **Practice** - audio-only player: 0.25–2.0 speed, ±12 semitones, volume,
-  A-B loops, named regions, waveform with zoom, keyboard shortcuts and a mini-player.
+  A-B loops, named regions, BPM/beat grid, bar-snapped loops, metronome and
+  count-in, waveform with zoom, keyboard shortcuts and a mini-player.
 - **App updates** — in-app banner, download verified with a Minisign signature,
   restart on your command.
 - **Update yt-dlp** from the UI.
@@ -120,7 +122,7 @@ loop a phrase, and mark sections. Video files and the system player are unchange
   on every edition; if it is missing, install the
   [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 - macOS 11+ on Intel or Apple Silicon.
-- About 80–105 MB to download and about 240 MB on disk, plus your media.
+- About 110–115 MB to download and about 253 MB on disk, plus your media.
 - A folder the app can write to.
 
 ### Troubleshooting
@@ -199,6 +201,7 @@ Common: Node.js 24+, Rust stable, npm.
 
 ```powershell
 npm ci
+npm run models:fetch     # Beat This! beat-grid models
 npm run tauri dev        # dev mode
 npm run build:portable   # src-tauri\target\release\klipparkiv.exe
 npm run pack:portable    # release\klipparkiv-<version>-win-x64.zip
@@ -210,6 +213,7 @@ npm run pack:portable    # release\klipparkiv-<version>-win-x64.zip
 npm ci
 npm run tauri dev        # dev mode
 node scripts/fetch-binaries.mjs mac-arm64   # or mac-x64
+node scripts/fetch-models.mjs               # Beat This! models
 npm run build:macos      # .app bundle
 npm run pack:macos -- <version> arm64       # DMG + update archive
 ```
@@ -331,7 +335,8 @@ for setup and checks. Bundled components keep their own licenses; see
 весь список или только видео по ссылке, при необходимости с диапазоном.
 
 Аудио открывается во встроенном плеере **Practice**: замедление, смена тона,
-луп фразы и разметка секций. Видео и системный плеер работают как раньше.
+луп фразы, сетка долей и метроном, разметка секций. Видео и системный плеер
+работают как раньше.
 
 ### Возможности
 
@@ -352,8 +357,8 @@ for setup and checks. Bundled components keep their own licenses; see
 - **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в Practice или
   системном плеере.
 - **Practice** — плеер только для аудио: скорость 0.25–2.0, ±12 полутонов,
-  громкость, A-B лупы, именованные регионы, волна с зумом, горячие клавиши
-  и мини-плеер.
+  громкость, A-B лупы, именованные регионы, BPM и сетка долей, лупы по тактам,
+  метроном и отсчёт, волна с зумом, горячие клавиши и мини-плеер.
 - **Обновления приложения** — баннер в окне, загрузка с проверкой подписи
   Minisign, перезапуск по команде.
 - **Обновление yt-dlp** из интерфейса.
@@ -371,7 +376,7 @@ for setup and checks. Bundled components keep their own licenses; see
   редакции; если его нет, установите
   [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 - macOS 11+ на Intel или Apple Silicon.
-- Около 80–105 МБ на скачивание и около 240 МБ на диске, плюс ваши медиа.
+- Около 110–115 МБ на скачивание и около 253 МБ на диске, плюс ваши медиа.
 - Папка с правом записи.
 
 ### Если что-то не работает
@@ -452,6 +457,7 @@ Windows распространяется по GPLv3, сборка для macOS �
 
 ```powershell
 npm ci
+npm run models:fetch     # модели сетки Beat This!
 npm run tauri dev        # режим разработки
 npm run build:portable   # src-tauri\target\release\klipparkiv.exe
 npm run pack:portable    # release\klipparkiv-<версия>-win-x64.zip

@@ -7,15 +7,45 @@ use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 
 use crate::practice::decode::{ControlEvent, DecoderMsg};
 use crate::practice::looping::LoopRuntime;
+use crate::practice::metronome::click_events;
 use crate::practice::shared::Shared;
 use crate::practice::stretch::Stretch;
 
 /// Fixed -3 dB headroom: the stretcher can raise peaks above the input level.
 const HEADROOM: f32 = 0.707;
+const CLICK_SECS: f32 = 0.02;
 
 fn apply_headroom(samples: &mut [f32]) {
     for sample in samples {
         *sample *= HEADROOM;
+    }
+}
+
+fn make_click(sample_rate: u32, channels: usize, frequency: f32, gain: f32) -> Vec<f32> {
+    let frames = (sample_rate as f32 * CLICK_SECS).max(1.0) as usize;
+    let mut output = vec![0.0f32; frames * channels];
+    for frame in 0..frames {
+        let time = frame as f32 / sample_rate as f32;
+        let envelope = (-time * 90.0).exp();
+        let sample = (std::f32::consts::TAU * frequency * time).sin() * envelope * gain;
+        for channel in 0..channels {
+            output[frame * channels + channel] = sample;
+        }
+    }
+    output
+}
+
+fn mix_click(output: &mut [f32], channels: usize, click: &[f32], start_frame: usize, volume: f32) {
+    let start = start_frame * channels;
+    if start >= output.len() {
+        return;
+    }
+    for (index, sample) in click.iter().enumerate() {
+        let target = start + index;
+        if target >= output.len() {
+            break;
+        }
+        output[target] = (output[target] + sample * volume).clamp(-1.0, 1.0);
     }
 }
 
@@ -98,6 +128,8 @@ where
     let mut stretch = Stretch::new(channels as u32, sample_rate);
     let mut last_pitch = shared.pitch();
     stretch.set_pitch_semitones(last_pitch);
+    let click = make_click(sample_rate, channels, 1_000.0, 0.28);
+    let accent_click = make_click(sample_rate, channels, 1_500.0, 0.38);
 
     let error_shared = shared.clone();
     let mut leftover: VecDeque<f32> = VecDeque::new();
@@ -125,6 +157,7 @@ where
                 if output_frames == 0 {
                     return;
                 }
+                let block_position = shared.position_secs();
 
                 let pitch = shared.pitch();
                 if pitch != last_pitch {
@@ -239,6 +272,28 @@ where
                 if volume != 1.0 {
                     for sample in &mut output_buffer[..data.len()] {
                         *sample *= volume;
+                    }
+                }
+
+                if shared.metronome_enabled()
+                    && let Some(grid) = shared.grid()
+                {
+                    let source_span = input_frames as f64 / sample_rate as f64;
+                    let metronome_volume = shared.metronome_volume();
+                    for event in click_events(
+                        &grid,
+                        block_position,
+                        block_position + source_span,
+                        output_frames,
+                    ) {
+                        let buffer = if event.accent { &accent_click } else { &click };
+                        mix_click(
+                            &mut output_buffer[..data.len()],
+                            channels,
+                            buffer,
+                            event.frame,
+                            metronome_volume,
+                        );
                     }
                 }
 

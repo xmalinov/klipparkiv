@@ -36,6 +36,227 @@ const HELP_ROWS: { keys: string; label: TranslationKey }[] = [
   { keys: "?", label: "practice.help.help" },
 ];
 
+function GridBar() {
+  const { t } = useI18n();
+  const {
+    state,
+    analysis,
+    analysisStatus,
+    analysisProgress,
+    analysisError,
+    grid,
+    setBpmScale,
+    setBeatsPerBar,
+    setBarOffset,
+    setSnapMode,
+    setMetronome,
+    setCountIn,
+    setManualBpm,
+    setGridEnabled,
+    loopBars,
+    startAnalysis,
+  } = usePractice();
+  const [manual, setManual] = useState(
+    state.manualBpm === null ? "" : String(state.manualBpm),
+  );
+  const [taps, setTaps] = useState<number[]>([]);
+
+  useEffect(() => {
+    setManual(state.manualBpm === null ? "" : String(state.manualBpm));
+  }, [state.manualBpm]);
+
+  const bpm = (state.manualBpm ?? analysis?.bpm ?? 0) * state.bpmScale;
+  const hasGrid = Boolean(grid);
+  const busy = analysisStatus === "loading";
+
+  function applyManual() {
+    const value = Number(manual.replace(",", "."));
+    setManualBpm(Number.isFinite(value) && value > 0 ? value : null);
+  }
+
+  function tapTempo() {
+    const now = performance.now();
+    const recent = [...taps.filter((time) => now - time < 3000), now].slice(-8);
+    setTaps(recent);
+    if (recent.length < 2) return;
+    const intervals = recent
+      .slice(1)
+      .map((time, index) => time - recent[index])
+      .filter((interval) => interval > 100);
+    if (intervals.length === 0) return;
+    intervals.sort((left, right) => left - right);
+    const median = intervals[Math.floor(intervals.length / 2)];
+    if (median > 0) setManualBpm(60000 / median);
+  }
+
+  return (
+    <div className="practice-grid-bar">
+      <div className="grid-bpm">
+        <span className="label">{t("practice.bpm")}</span>
+        <strong>{bpm > 0 ? bpm.toFixed(1) : "—"}</strong>
+        <button
+          type="button"
+          className={state.bpmScale === 0.5 ? "chip active" : "chip"}
+          onClick={() => setBpmScale(0.5)}
+          title={t("practice.bpmHalf")}
+        >
+          ÷2
+        </button>
+        <button
+          type="button"
+          className={state.bpmScale === 2 ? "chip active" : "chip"}
+          onClick={() => setBpmScale(2)}
+          title={t("practice.bpmDouble")}
+        >
+          ×2
+        </button>
+      </div>
+
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={state.gridEnabled}
+          onChange={(event) => setGridEnabled(event.currentTarget.checked)}
+        />
+        {t("practice.gridAuto")}
+      </label>
+
+      <label className="grid-field">
+        <span>{t("practice.meter")}</span>
+        <select
+          className="field"
+          value={state.beatsPerBar}
+          onChange={(event) => setBeatsPerBar(Number(event.currentTarget.value))}
+        >
+          {[2, 3, 4, 6, 8].map((beats) => (
+            <option key={beats} value={beats}>
+              {beats}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="grid-field">
+        <span>{t("practice.barStart")}</span>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => setBarOffset(state.barOffset - 1)}
+          aria-label={t("practice.barPrevious")}
+        >
+          ‹
+        </button>
+        <span className="grid-value">{state.barOffset + 1}</span>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => setBarOffset(state.barOffset + 1)}
+          aria-label={t("practice.barNext")}
+        >
+          ›
+        </button>
+      </div>
+
+      <label className="grid-field">
+        <span>{t("practice.snap")}</span>
+        <select
+          className="field"
+          value={state.snapMode}
+          onChange={(event) =>
+            setSnapMode(event.currentTarget.value as "bar" | "beat" | "free")
+          }
+        >
+          <option value="bar">{t("practice.snapBar")}</option>
+          <option value="beat">{t("practice.snapBeat")}</option>
+          <option value="free">{t("practice.snapFree")}</option>
+        </select>
+      </label>
+
+      <div className="grid-field">
+        <span>{t("practice.loopLength")}</span>
+        {[1, 2, 4, 8].map((bars) => (
+          <button
+            key={bars}
+            type="button"
+            className="chip"
+            disabled={!hasGrid}
+            onClick={() => loopBars(bars)}
+          >
+            {bars}
+          </button>
+        ))}
+      </div>
+
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={state.metronomeEnabled}
+          disabled={!hasGrid}
+          onChange={(event) =>
+            setMetronome(event.currentTarget.checked, state.metronomeVolume)
+          }
+        />
+        {t("practice.metronome")}
+      </label>
+
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={state.countIn}
+          disabled={!hasGrid}
+          onChange={(event) => setCountIn(event.currentTarget.checked)}
+        />
+        {t("practice.countIn")}
+      </label>
+
+      <label className="grid-field grid-manual">
+        <span>{t("practice.manualBpm")}</span>
+        <input
+          className="field speed-input"
+          type="number"
+          min={20}
+          max={400}
+          step={0.1}
+          value={manual}
+          placeholder={t("practice.auto")}
+          onChange={(event) => setManual(event.currentTarget.value)}
+          onBlur={applyManual}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") applyManual();
+          }}
+        />
+        <button type="button" className="chip" onClick={tapTempo}>
+          {t("practice.tap")}
+        </button>
+      </label>
+
+      <div className="grid-status" role="status">
+        {busy ? (
+          <span className="grid-building">
+            <span className="spinner small" aria-hidden="true" />
+            {t("practice.gridBuilding")} {Math.round(analysisProgress * 100)}%
+          </span>
+        ) : analysisStatus === "error" ? (
+          <button type="button" className="chip" onClick={() => startAnalysis()}>
+            {t("practice.gridRetry")}
+          </button>
+        ) : hasGrid ? (
+          <span className="ok">●</span>
+        ) : (
+          <button type="button" className="chip" onClick={() => startAnalysis()}>
+            {t("practice.gridAnalyze")}
+          </button>
+        )}
+        {analysisError && analysisStatus === "error" && (
+          <span className="grid-error" title={analysisError}>
+            {t("practice.gridUnavailable")}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PracticeScreen({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
   const {
@@ -43,6 +264,7 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
     state,
     snapshot,
     error,
+    opening,
     recent,
     selection,
     duration,
@@ -258,6 +480,15 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
     state.pitchSemitones,
   ]);
 
+  if (opening) {
+    return (
+      <div className="practice practice-opening" role="status">
+        <span className="spinner" aria-hidden="true" />
+        <p>{t("practice.opening")}</p>
+      </div>
+    );
+  }
+
   if (!track) {
     return (
       <div className="practice practice-empty">
@@ -295,8 +526,9 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
         </p>
       )}
 
-      <Waveform height={220} />
+      <GridBar />
 
+      <Waveform height={220} />
       <div className="practice-main">
         <div className="practice-left">
           <div className="transport">

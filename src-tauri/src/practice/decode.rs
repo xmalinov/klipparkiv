@@ -163,12 +163,13 @@ fn start_child(
     child_slot: &mut Option<Child>,
     reader_slot: &mut Option<JoinHandle<()>>,
 ) {
-    let mut child = match Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args(decoder_args(path, sample_rate, channels, position_secs))
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+        .stderr(Stdio::null());
+    crate::process::hide_console_std(&mut command);
+    let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
             let _ = control.send(ControlEvent::Error {
@@ -280,7 +281,8 @@ pub fn decode_region(
         return Err("loop region is empty".into());
     }
 
-    let output = Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args([
             "-hide_banner",
             "-loglevel",
@@ -297,7 +299,9 @@ pub fn decode_region(
         .arg(channels.to_string())
         .arg("-ar")
         .arg(sample_rate.to_string())
-        .args(["-f", "f32le", "pipe:1"])
+        .args(["-f", "f32le", "pipe:1"]);
+    crate::process::hide_console_std(&mut command);
+    let output = command
         .output()
         .map_err(|error| format!("cannot decode loop region: {error}"))?;
 

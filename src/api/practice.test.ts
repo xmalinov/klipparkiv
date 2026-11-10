@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   decodePeaks,
+  onPracticeAnalysisDone,
   onPracticePosition,
+  practiceAnalysisGet,
+  practiceAnalysisStart,
   practiceOpen,
+  practiceSetGrid,
   practiceSetLoop,
 } from "./practice";
 
@@ -32,6 +36,7 @@ describe("practice api", () => {
       startSecs: 1.5,
       endSecs: 3.5,
       preRoll: true,
+      preRollSecs: null,
     });
   });
 
@@ -47,6 +52,48 @@ describe("practice api", () => {
     expect(invoke).toHaveBeenCalledWith("practice_open", {
       path: "C:\\audio\\a.mp3",
     });
+  });
+
+  it("starts and reads beat-grid analysis", async () => {
+    invoke.mockResolvedValue(null);
+    await practiceAnalysisGet("C:\\audio\\a.mp3");
+    expect(invoke).toHaveBeenCalledWith("practice_analysis_get", {
+      path: "C:\\audio\\a.mp3",
+    });
+    invoke.mockResolvedValue(undefined);
+    await practiceAnalysisStart("C:\\audio\\a.mp3");
+    expect(invoke).toHaveBeenCalledWith("practice_analysis_start", {
+      path: "C:\\audio\\a.mp3",
+    });
+  });
+
+  it("sends the metronome grid in camelCase", async () => {
+    invoke.mockResolvedValue(undefined);
+    await practiceSetGrid({
+      bpm: 120,
+      beatsPerBar: 4,
+      barOffset: 0,
+      beats: [0, 0.5],
+      downbeats: [0],
+    });
+    expect(invoke).toHaveBeenCalledWith("practice_set_grid", {
+      grid: {
+        bpm: 120,
+        beatsPerBar: 4,
+        barOffset: 0,
+        beats: [0, 0.5],
+        downbeats: [0],
+      },
+    });
+  });
+
+  it("subscribes to analysis done events", async () => {
+    const handler = vi.fn();
+    await onPracticeAnalysisDone(handler);
+    expect(listen).toHaveBeenCalledWith(
+      "analysis://done",
+      expect.any(Function),
+    );
   });
 
   it("subscribes to position events", async () => {

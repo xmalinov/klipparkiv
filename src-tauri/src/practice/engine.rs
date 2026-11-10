@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::practice::decode::{self, DecoderMsg};
 use crate::practice::looping::{self, LoopRuntime, LoopSettings};
+use crate::practice::metronome::MetronomeGrid;
 use crate::practice::output;
 use crate::practice::shared::Shared;
 use crate::practice::state::PracticeState;
@@ -53,6 +54,14 @@ struct Session {
 }
 
 impl Session {
+    fn set_grid(&self, grid: Option<Arc<MetronomeGrid>>) {
+        self.shared.set_grid(grid);
+    }
+
+    fn set_metronome(&self, enabled: bool, volume: f32) {
+        self.shared.set_metronome(enabled, volume);
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         ffmpeg: PathBuf,
@@ -64,6 +73,9 @@ impl Session {
         autoplay: bool,
         loop_settings: Option<LoopSettings>,
         initial_loop_offset_secs: f64,
+        grid: Option<Arc<MetronomeGrid>>,
+        metronome_enabled: bool,
+        metronome_volume: f32,
     ) -> Result<Self, String> {
         let output = output::default_output()?;
         let sample_format = output.config.sample_format();
@@ -119,6 +131,8 @@ impl Session {
             position.max(0.0),
             latency_secs,
         ));
+        shared.set_grid(grid);
+        shared.set_metronome(metronome_enabled, metronome_volume);
         let (sender, receiver) = sync_channel::<DecoderMsg>(64);
         let decoder = decode::DecoderController::new(
             ffmpeg,
@@ -245,6 +259,9 @@ pub struct Player {
     ffmpeg: PathBuf,
     track: Option<Track>,
     session: Option<Session>,
+    grid: Option<Arc<MetronomeGrid>>,
+    metronome_enabled: bool,
+    metronome_volume: f32,
 }
 
 impl Player {
@@ -253,11 +270,15 @@ impl Player {
             ffmpeg,
             track: None,
             session: None,
+            grid: None,
+            metronome_enabled: false,
+            metronome_volume: 0.5,
         }
     }
 
     pub fn open(&mut self, path: PathBuf, duration_secs: Option<f64>) -> Result<Opened, String> {
         self.session = None;
+        self.grid = None;
         self.track = Some(Track {
             path,
             duration: duration_secs,
@@ -289,10 +310,13 @@ impl Player {
                 start: region.start,
                 end: region.end,
                 pre_roll: state.pre_roll,
+                pre_roll_secs: state.pre_roll_secs,
             })
         } else {
             None
         };
+        self.metronome_enabled = state.metronome_enabled;
+        self.metronome_volume = state.metronome_volume;
         if let Some(settings) = track.loop_settings
             && (track.position < settings.start || track.position > settings.end)
         {
@@ -301,7 +325,18 @@ impl Player {
     }
 
     pub fn play(&mut self) -> Result<(), String> {
-        let (path, mut position, speed, pitch, volume, duration, loop_settings) = {
+        let (
+            path,
+            mut position,
+            speed,
+            pitch,
+            volume,
+            duration,
+            loop_settings,
+            grid,
+            metronome_enabled,
+            metronome_volume,
+        ) = {
             let track = self
                 .track
                 .as_ref()
@@ -314,6 +349,9 @@ impl Player {
                 track.volume,
                 track.duration,
                 track.loop_settings,
+                self.grid.clone(),
+                self.metronome_enabled,
+                self.metronome_volume,
             )
         };
 
@@ -331,7 +369,7 @@ impl Player {
 
         let mut initial_loop_offset = 0.0;
         if let Some(settings) = loop_settings {
-            let pre_roll_start = (settings.start - 2.0).max(0.0);
+            let pre_roll_start = (settings.start - settings.pre_roll_secs).max(0.0);
             let in_pre_roll =
                 settings.pre_roll && position >= pre_roll_start && position <= settings.end;
             if !in_pre_roll && (position < settings.start || position > settings.end) {
@@ -350,6 +388,9 @@ impl Player {
             true,
             loop_settings,
             initial_loop_offset,
+            grid,
+            metronome_enabled,
+            metronome_volume,
         )?;
         self.session = Some(session);
         if let Some(track) = self.track.as_mut() {
@@ -407,6 +448,9 @@ impl Player {
         if let Some(session) = self.session.as_ref() {
             let was_playing = session.playing();
             self.session = None;
+            let grid = self.grid.clone();
+            let metronome_enabled = self.metronome_enabled;
+            let metronome_volume = self.metronome_volume;
             let session = Session::new(
                 self.ffmpeg.clone(),
                 path,
@@ -417,6 +461,9 @@ impl Player {
                 was_playing,
                 session_loop,
                 initial_loop_offset,
+                grid,
+                metronome_enabled,
+                metronome_volume,
             )?;
             self.session = Some(session);
         }
@@ -478,6 +525,7 @@ impl Player {
         start_secs: Option<f64>,
         end_secs: Option<f64>,
         pre_roll: bool,
+        pre_roll_secs: Option<f64>,
     ) -> Result<(), String> {
         let current = self.position().unwrap_or(0.0);
         let (path, speed, pitch, volume, duration) = {
@@ -505,17 +553,21 @@ impl Player {
             {
                 return Err("loop region is outside the track".to_string());
             }
+            let pre_roll_secs = pre_roll_secs.unwrap_or(2.0).clamp(0.0, 30.0);
             Some(LoopSettings {
                 start,
                 end,
                 pre_roll,
+                pre_roll_secs,
             })
         } else {
             None
         };
 
         let position = match settings {
-            Some(settings) if settings.pre_roll => (settings.start - 2.0).max(0.0),
+            Some(settings) if settings.pre_roll => {
+                (settings.start - settings.pre_roll_secs).max(0.0)
+            }
             Some(settings) => settings.start,
             None => current,
         };
@@ -528,6 +580,9 @@ impl Player {
 
         if self.session.is_some() {
             self.session = None;
+            let grid = self.grid.clone();
+            let metronome_enabled = self.metronome_enabled;
+            let metronome_volume = self.metronome_volume;
             let session = Session::new(
                 self.ffmpeg.clone(),
                 path,
@@ -538,11 +593,29 @@ impl Player {
                 was_playing,
                 settings,
                 0.0,
+                grid,
+                metronome_enabled,
+                metronome_volume,
             )?;
             self.session = Some(session);
         }
 
         Ok(())
+    }
+
+    pub fn set_grid(&mut self, grid: Option<Arc<MetronomeGrid>>) {
+        self.grid = grid.clone();
+        if let Some(session) = self.session.as_ref() {
+            session.set_grid(grid);
+        }
+    }
+
+    pub fn set_metronome(&mut self, enabled: bool, volume: f32) {
+        self.metronome_enabled = enabled;
+        self.metronome_volume = volume.clamp(0.0, 1.0);
+        if let Some(session) = self.session.as_ref() {
+            session.set_metronome(enabled, self.metronome_volume);
+        }
     }
 
     pub fn close(&mut self) {

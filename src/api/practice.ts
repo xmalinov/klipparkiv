@@ -10,6 +10,8 @@ export type RegionKind =
   | "outro"
   | "custom";
 
+export type SnapMode = "bar" | "beat" | "free";
+
 export interface PracticeRegion {
   id: string;
   name: string;
@@ -28,6 +30,17 @@ export interface PracticeState {
   cents: number;
   loopEnabled: boolean;
   preRoll: boolean;
+  preRollSecs: number;
+  gridEnabled: boolean;
+  bpmScale: number;
+  beatsPerBar: number;
+  barOffset: number;
+  gridCustomized: boolean;
+  snapMode: SnapMode;
+  metronomeEnabled: boolean;
+  metronomeVolume: number;
+  countIn: boolean;
+  manualBpm: number | null;
   activeRegionId: string | null;
   regions: PracticeRegion[];
 }
@@ -62,8 +75,43 @@ export interface PracticeError {
   message: string;
 }
 
+export interface PracticeAnalysis {
+  version: number;
+  path: string;
+  durationSecs: number;
+  bpmRaw: number;
+  bpm: number;
+  octave: number;
+  confidence: number;
+  beats: number[];
+  downbeats: number[];
+  beatsPerBar: number;
+  barOffset: number;
+  model: string;
+  analyzedAt: number;
+}
+
+export interface AnalysisProgress {
+  path: string;
+  stage: "model" | "beat" | "cached" | "done";
+  progress: number;
+}
+
+export interface AnalysisError {
+  path: string;
+  message: string;
+}
+
+export interface GridPayload {
+  bpm: number;
+  beatsPerBar: number;
+  barOffset: number;
+  beats: number[];
+  downbeats: number[];
+}
+
 export const DEFAULT_PRACTICE_STATE: PracticeState = {
-  version: 1,
+  version: 3,
   positionSecs: 0,
   speed: 1,
   volume: 1,
@@ -71,6 +119,17 @@ export const DEFAULT_PRACTICE_STATE: PracticeState = {
   cents: 0,
   loopEnabled: false,
   preRoll: true,
+  preRollSecs: 2,
+  gridEnabled: true,
+  bpmScale: 1,
+  beatsPerBar: 4,
+  barOffset: 0,
+  gridCustomized: false,
+  snapMode: "beat",
+  metronomeEnabled: false,
+  metronomeVolume: 0.5,
+  countIn: true,
+  manualBpm: null,
   activeRegionId: null,
   regions: [],
 };
@@ -108,13 +167,26 @@ export function practiceSetLoop(
   startSecs: number | null,
   endSecs: number | null,
   preRoll: boolean,
+  preRollSecs: number | null = null,
 ): Promise<void> {
   return invoke<void>("practice_set_loop", {
     enabled,
     startSecs,
     endSecs,
     preRoll,
+    preRollSecs,
   });
+}
+
+export function practiceSetGrid(grid: GridPayload | null): Promise<void> {
+  return invoke<void>("practice_set_grid", { grid });
+}
+
+export function practiceSetMetronome(
+  enabled: boolean,
+  volume: number,
+): Promise<void> {
+  return invoke<void>("practice_set_metronome", { enabled, volume });
 }
 
 export function practicePosition(): Promise<PracticeSnapshot | null> {
@@ -162,6 +234,20 @@ export function practiceWaveform(path: string): Promise<Waveform> {
   return invoke<Waveform>("practice_waveform", { path });
 }
 
+export function practiceAnalysisGet(
+  path: string,
+): Promise<PracticeAnalysis | null> {
+  return invoke<PracticeAnalysis | null>("practice_analysis_get", { path });
+}
+
+export function practiceAnalysisStart(path: string): Promise<void> {
+  return invoke<void>("practice_analysis_start", { path });
+}
+
+export function practiceAnalysisCancel(): Promise<void> {
+  return invoke<void>("practice_analysis_cancel");
+}
+
 export function onPracticePosition(
   handler: (snapshot: PracticeSnapshot) => void,
 ): Promise<UnlistenFn> {
@@ -174,6 +260,30 @@ export function onPracticeError(
   handler: (error: PracticeError) => void,
 ): Promise<UnlistenFn> {
   return listen<PracticeError>("practice://error", (event) => {
+    handler(event.payload);
+  });
+}
+
+export function onPracticeAnalysisProgress(
+  handler: (progress: AnalysisProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<AnalysisProgress>("analysis://progress", (event) => {
+    handler(event.payload);
+  });
+}
+
+export function onPracticeAnalysisDone(
+  handler: (analysis: PracticeAnalysis) => void,
+): Promise<UnlistenFn> {
+  return listen<PracticeAnalysis>("analysis://done", (event) => {
+    handler(event.payload);
+  });
+}
+
+export function onPracticeAnalysisError(
+  handler: (error: AnalysisError) => void,
+): Promise<UnlistenFn> {
+  return listen<AnalysisError>("analysis://error", (event) => {
     handler(event.payload);
   });
 }

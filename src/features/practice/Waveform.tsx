@@ -54,6 +54,8 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     updateRegion,
     loopRegion,
     track,
+    grid,
+    snapTime,
   } = usePractice();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -198,6 +200,32 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       context.stroke();
     }
 
+    if (grid) {
+      context.lineWidth = 1;
+      for (const beat of grid.beats) {
+        if (beat < view.start - 0.001 || beat > view.end + 0.001) continue;
+        const x = timeToX(beat);
+        context.strokeStyle = "rgba(120, 170, 255, 0.16)";
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, height);
+        context.stroke();
+      }
+      context.font = "10px sans-serif";
+      for (let index = 0; index < grid.barStarts.length; index += 1) {
+        const bar = grid.barStarts[index];
+        if (bar < view.start - 0.001 || bar > view.end + 0.001) continue;
+        const x = timeToX(bar);
+        context.strokeStyle = "rgba(120, 170, 255, 0.38)";
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, height);
+        context.stroke();
+        context.fillStyle = "rgba(160, 190, 240, 0.65)";
+        context.fillText(String(index + 1), x + 3, height - 18);
+      }
+    }
+
     const regions = state.regions.map((region) =>
       regionPreview && regionPreview.id === region.id
         ? { ...region, start: regionPreview.start, end: regionPreview.end }
@@ -264,6 +292,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     snapshot.positionSecs,
     state.regions,
     timeToX,
+    grid,
     view.start,
     viewDuration,
     waveform?.durationSecs,
@@ -309,6 +338,9 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     if (event.button !== 0) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const time = xToTime(event.clientX - bounds.left);
+    const snapped = event.altKey
+      ? Math.max(0, Math.min(total, time))
+      : snapTime(time);
     const selectionEdge = selectionEdgeAt(time);
     if (selectionEdge) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -359,7 +391,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { kind: "create", anchor: time, current: time };
+    dragRef.current = { kind: "create", anchor: snapped, current: snapped };
     setSelection(null);
     setCursor("crosshair");
   }
@@ -367,6 +399,9 @@ export default function Waveform({ height = 190 }: { height?: number }) {
   function pointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
     const bounds = event.currentTarget.getBoundingClientRect();
     const time = xToTime(event.clientX - bounds.left);
+    const snapped = event.altKey
+      ? Math.max(0, Math.min(total, time))
+      : snapTime(time);
     const drag = dragRef.current;
     if (!drag) {
       if (selectionEdgeAt(time) || regionEdgeAt(time)) {
@@ -387,15 +422,18 @@ export default function Waveform({ height = 190 }: { height?: number }) {
 
     switch (drag.kind) {
       case "create":
-        drag.current = time;
+        drag.current = snapped;
         setSelection({
-          start: Math.max(0, Math.min(drag.anchor, time)),
-          end: Math.min(total, Math.max(drag.anchor, time)),
+          start: Math.max(0, Math.min(drag.anchor, snapped)),
+          end: Math.min(total, Math.max(drag.anchor, snapped)),
         });
         break;
       case "selection-move": {
         const span = drag.end - drag.start;
         let start = drag.start + (time - drag.anchor);
+        start = event.altKey
+          ? Math.max(0, Math.min(start, total - span))
+          : snapTime(start);
         start = Math.max(0, Math.min(start, total - span));
         setSelection({ start, end: start + span });
         break;
@@ -403,7 +441,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       case "selection-start": {
         const end = drag.fixed;
         setSelection({
-          start: Math.max(0, Math.min(time, end - 0.05)),
+          start: Math.max(0, Math.min(snapped, end - 0.05)),
           end,
         });
         break;
@@ -412,7 +450,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
         const start = drag.fixed;
         setSelection({
           start,
-          end: Math.min(total, Math.max(time, start + 0.05)),
+          end: Math.min(total, Math.max(snapped, start + 0.05)),
         });
         break;
       }
@@ -421,7 +459,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
         if (!region) break;
         setRegionPreview({
           id: region.id,
-          start: Math.max(0, Math.min(time, drag.fixed - 0.05)),
+          start: Math.max(0, Math.min(snapped, drag.fixed - 0.05)),
           end: drag.fixed,
         });
         break;
@@ -432,7 +470,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
         setRegionPreview({
           id: region.id,
           start: drag.fixed,
-          end: Math.min(total, Math.max(time, drag.fixed + 0.05)),
+          end: Math.min(total, Math.max(snapped, drag.fixed + 0.05)),
         });
         break;
       }
@@ -446,6 +484,9 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     if (!drag) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const time = xToTime(event.clientX - bounds.left);
+    const snapped = event.altKey
+      ? Math.max(0, Math.min(total, time))
+      : snapTime(time);
 
     if (drag.kind === "create") {
       if (Math.abs(time - drag.anchor) < 0.05) {
@@ -467,11 +508,11 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       if (!region) return;
       const start =
         drag.kind === "region-start"
-          ? Math.max(0, Math.min(time, drag.fixed - 0.05))
+          ? Math.max(0, Math.min(snapped, drag.fixed - 0.05))
           : drag.fixed;
       const end =
         drag.kind === "region-end"
-          ? Math.min(total, Math.max(time, drag.fixed + 0.05))
+          ? Math.min(total, Math.max(snapped, drag.fixed + 0.05))
           : drag.fixed;
       updateRegion(region.id, { start, end });
     }
@@ -513,7 +554,10 @@ export default function Waveform({ height = 190 }: { height?: number }) {
         onWheel={wheel}
       />
       {waveformLoading && (
-        <div className="waveform-overlay">{t("practice.waveformLoading")}</div>
+        <div className="waveform-overlay">
+          <span className="spinner" aria-hidden="true" />
+          {t("practice.waveformLoading")}
+        </div>
       )}
       <div className="waveform-zoom">
         <button

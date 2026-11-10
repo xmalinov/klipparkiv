@@ -25,6 +25,21 @@ pub fn prepare(exe: &Path, args: &[OsString]) -> Command {
     command
 }
 
+/// Hides the console window for a blocking `std::process::Command` on Windows.
+/// The GUI app has no console of its own, so without this every ffmpeg/ffprobe
+/// spawn flashes a terminal window.
+pub fn hide_console_std(command: &mut std::process::Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
+
 /// Explains a failed spawn: the OS message alone ("the system cannot find the
 /// path specified") does not tell the user which file or folder is wrong, so
 /// the tool name, the full path and a likely cause are appended.
@@ -102,13 +117,15 @@ pub fn spawn_error(tool: &str, exe: &Path, error: &std::io::Error) -> String {
 pub async fn kill_tree(pid: u32) -> bool {
     #[cfg(windows)]
     {
-        let status = Command::new("taskkill")
+        let mut command = Command::new("taskkill");
+        command
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await;
+            .stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+        let status = command.status().await;
         matches!(status, Ok(s) if s.success())
     }
 

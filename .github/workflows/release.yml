@@ -26,6 +26,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Fetch beat-grid models
+        run: npm run models:fetch
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -129,6 +132,9 @@ jobs:
 
       - name: Fetch macOS binaries
         run: node scripts/fetch-binaries.mjs "mac-${{ matrix.arch }}"
+
+      - name: Fetch beat-grid models
+        run: node scripts/fetch-models.mjs
 
       - name: Install frontend dependencies
         run: npm ci

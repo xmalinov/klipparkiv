@@ -166,8 +166,8 @@ export function applyProgress(
       ? {
           ...task,
           percent: progress.percent,
-          speedBps: progress.speedBps,
-          etaSecs: progress.etaSecs,
+          speedBps: progress.speedBps ?? task.speedBps,
+          etaSecs: progress.etaSecs ?? task.etaSecs,
           playlistIndex: progress.playlistIndex ?? task.playlistIndex,
           playlistCount: progress.playlistCount ?? task.playlistCount,
         }

@@ -55,6 +55,20 @@ The main frameworks are:
 - [npm packages](https://www.npmjs.com/) — per-package licenses in
   `package-lock.json`.
 
+### Beat This! and beat-this
+
+- Beat This! project: <https://github.com/CPJKU/beat_this>
+- Beat This! paper: Foscarin, Schlüter, Widmer, ISMIR 2024.
+- Beat This! license: MIT (code and published model weights).
+- License text: [LICENSES/Beat-This-MIT.txt](LICENSES/Beat-This-MIT.txt)
+- Rust port: <https://github.com/danigb/beat-this-rs>, MIT.
+- Bundled model files: `bin/models/beat_this_small.onnx` and
+  `bin/models/mel_spectrogram.onnx`.
+- The Beat This! authors note that some training recordings are copyrighted or
+  under limited Creative Commons licenses; see the upstream repository for the
+  current statement.
+- Used locally for BPM and beat-grid analysis. No audio leaves the device.
+
 ### cpal
 
 - Project: <https://github.com/RustAudio/cpal>

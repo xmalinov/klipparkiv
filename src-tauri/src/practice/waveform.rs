@@ -64,14 +64,17 @@ pub fn load_or_compute(ffmpeg: &Path, cache_dir: &Path, path: &Path) -> Result<W
 }
 
 pub fn compute(ffmpeg: &Path, path: &Path) -> Result<Waveform, String> {
-    let mut child = Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-i"])
         .arg(path)
         .args([
             "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "pipe:1",
         ])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    crate::process::hide_console_std(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|error| format!("cannot start ffmpeg for waveform: {error}"))?;
 

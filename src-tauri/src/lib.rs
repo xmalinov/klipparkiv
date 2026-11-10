@@ -1,3 +1,4 @@
+mod analysis;
 mod args;
 mod binaries;
 mod commands;
@@ -141,6 +142,7 @@ pub fn run() {
         .manage(settings_store)
         .manage(tasks)
         .manage(practice)
+        .manage(analysis::AnalysisState::default())
         .manage(UpdateStore::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -240,13 +242,18 @@ pub fn run() {
             practice::practice_set_pitch,
             practice::practice_set_volume,
             practice::practice_set_loop,
+            practice::practice_set_grid,
+            practice::practice_set_metronome,
             practice::practice_position,
             practice::practice_state_get,
             practice::practice_state_save,
             practice::practice_recent,
             practice::practice_recent_hide,
             practice::practice_waveform,
-            practice::practice_close
+            practice::practice_close,
+            analysis::practice_analysis_get,
+            analysis::practice_analysis_start,
+            analysis::practice_analysis_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

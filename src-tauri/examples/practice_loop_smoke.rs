@@ -34,7 +34,7 @@ fn main() -> Result<(), String> {
 
     let mut player = Player::new(ffmpeg);
     player.open(PathBuf::from(path), None)?;
-    player.set_loop(true, Some(2.0), Some(4.0), true)?;
+    player.set_loop(true, Some(2.0), Some(4.0), true, Some(2.0))?;
     player.play()?;
 
     for index in 0..16 {
@@ -51,7 +51,7 @@ fn main() -> Result<(), String> {
     sleep(Duration::from_millis(500));
     println!("seek_in_loop={:?}", player.snapshot());
 
-    player.set_loop(false, None, None, false)?;
+    player.set_loop(false, None, None, false, None)?;
     sleep(Duration::from_secs(1));
     println!("loop_off={:?}", player.snapshot());
 

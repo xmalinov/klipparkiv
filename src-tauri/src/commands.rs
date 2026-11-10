@@ -254,8 +254,12 @@ impl TaskStore {
     ) -> Option<TaskSnapshot> {
         self.update(id, |snapshot| {
             snapshot.percent = overall_percent(percent, playlist_index, playlist_count);
-            snapshot.speed_bps = speed_bps;
-            snapshot.eta_secs = eta_secs;
+            if let Some(speed) = speed_bps {
+                snapshot.speed_bps = Some(speed);
+            }
+            if let Some(eta) = eta_secs {
+                snapshot.eta_secs = Some(eta);
+            }
             if playlist_index.is_some() {
                 snapshot.playlist_index = playlist_index;
             }
@@ -1003,8 +1007,8 @@ async fn read_stdout(
                 &ProgressEvent {
                     id: id.clone(),
                     percent: snapshot.as_ref().map_or(parsed.percent, |s| s.percent),
-                    speed_bps: parsed.speed_bps,
-                    eta_secs: parsed.eta_secs,
+                    speed_bps: snapshot.as_ref().and_then(|s| s.speed_bps),
+                    eta_secs: snapshot.as_ref().and_then(|s| s.eta_secs),
                     playlist_index: parsed.playlist_index,
                     playlist_count: parsed.playlist_count,
                 },

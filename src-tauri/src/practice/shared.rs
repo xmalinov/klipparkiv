@@ -1,8 +1,13 @@
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
+use arc_swap::ArcSwapOption;
+
+use crate::practice::metronome::MetronomeGrid;
+
 /// State shared between the UI commands, the audio callback and the event thread.
-/// The callback only touches atomics; the mutex is used on error paths.
+/// The callback only touches atomics and an arc-swap slot; the mutex is used on error paths.
 pub struct Shared {
     speed_bits: AtomicU32,
     pitch_bits: AtomicU32,
@@ -12,6 +17,9 @@ pub struct Shared {
     position_override: AtomicU64,
     playing: AtomicBool,
     ended: AtomicBool,
+    metronome_enabled: AtomicBool,
+    metronome_volume_bits: AtomicU32,
+    grid: ArcSwapOption<MetronomeGrid>,
     sample_rate: u32,
     channels: usize,
     base_secs: f64,
@@ -38,6 +46,9 @@ impl Shared {
             position_override: AtomicU64::new(u64::MAX),
             playing: AtomicBool::new(false),
             ended: AtomicBool::new(false),
+            metronome_enabled: AtomicBool::new(false),
+            metronome_volume_bits: AtomicU32::new(0.5f32.to_bits()),
+            grid: ArcSwapOption::empty(),
             sample_rate,
             channels,
             base_secs,
@@ -69,6 +80,28 @@ impl Shared {
 
     pub fn set_volume(&self, volume: f32) {
         self.volume_bits.store(volume.to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn set_grid(&self, grid: Option<Arc<MetronomeGrid>>) {
+        self.grid.store(grid);
+    }
+
+    pub fn grid(&self) -> Option<Arc<MetronomeGrid>> {
+        self.grid.load_full()
+    }
+
+    pub fn set_metronome(&self, enabled: bool, volume: f32) {
+        self.metronome_enabled.store(enabled, Ordering::Relaxed);
+        self.metronome_volume_bits
+            .store(volume.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn metronome_enabled(&self) -> bool {
+        self.metronome_enabled.load(Ordering::Relaxed)
+    }
+
+    pub fn metronome_volume(&self) -> f32 {
+        f32::from_bits(self.metronome_volume_bits.load(Ordering::Relaxed))
     }
 
     pub fn add_consumed(&self, frames: u64) {

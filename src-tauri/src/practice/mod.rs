@@ -2,6 +2,7 @@ mod decode;
 pub mod engine;
 mod ffi;
 mod looping;
+mod metronome;
 mod output;
 mod shared;
 mod state;
@@ -11,7 +12,7 @@ pub mod waveform;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -19,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::library::{Library, LibraryItem, resolve_media};
 use crate::paths::AppPaths;
+use crate::practice::metronome::{GridPayload, MetronomeGrid};
 
 use engine::{Player, Snapshot};
 use state::PracticeState as PracticeData;
@@ -56,7 +58,8 @@ struct ErrorPayload {
 }
 
 fn probe_duration(ffprobe: &Path, path: &Path) -> Option<f64> {
-    let output = Command::new(ffprobe)
+    let mut command = Command::new(ffprobe);
+    command
         .args([
             "-v",
             "error",
@@ -65,9 +68,9 @@ fn probe_duration(ffprobe: &Path, path: &Path) -> Option<f64> {
             "-of",
             "default=noprint_wrappers=1:nokey=1",
         ])
-        .arg(path)
-        .output()
-        .ok()?;
+        .arg(path);
+    crate::process::hide_console_std(&mut command);
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -226,10 +229,31 @@ pub fn practice_set_loop(
     start_secs: Option<f64>,
     end_secs: Option<f64>,
     pre_roll: bool,
+    pre_roll_secs: Option<f64>,
 ) -> Result<(), String> {
     state
         .lock()?
-        .set_loop(enabled, start_secs, end_secs, pre_roll)
+        .set_loop(enabled, start_secs, end_secs, pre_roll, pre_roll_secs)
+}
+
+#[tauri::command]
+pub fn practice_set_grid(
+    state: State<'_, PracticeState>,
+    grid: Option<GridPayload>,
+) -> Result<(), String> {
+    let grid = grid.map(MetronomeGrid::try_from).transpose()?.map(Arc::new);
+    state.lock()?.set_grid(grid);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn practice_set_metronome(
+    state: State<'_, PracticeState>,
+    enabled: bool,
+    volume: f32,
+) -> Result<(), String> {
+    state.lock()?.set_metronome(enabled, volume);
+    Ok(())
 }
 
 #[tauri::command]
