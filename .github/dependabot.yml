@@ -5,12 +5,27 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Patch + minor в одном PR: меньше шума и один auto-merge вместо пяти
+    groups:
+      npm-patch-minor:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: cargo
     directory: "/src-tauri"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      cargo-patch-minor:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
