@@ -12,7 +12,8 @@ to [Semantic Versioning](https://semver.org/).
 
 ### [1.7.0] — 2026-11-11
 
-Practice player release. Download and library behaviour is unchanged.
+Practice player release with a local beat grid. Download and library behaviour is
+largely unchanged.
 
 #### Added
 
@@ -28,8 +29,8 @@ Practice player release. Download and library behaviour is unchanged.
   are cached in `data\analysis`.
 - Bar grid with 2/3/4/6/8 beats per bar, bar-start correction, half/double
   tempo correction, and a manual BPM fallback.
-- Bar-snapped loop creation (1/2/4/8 bars), snap-to-beat/bar/free dragging, and
-  a metronome with downbeat accents and count-in.
+- Beat/bar-snapped loop creation (1/2/4/8 bars), snap-to-beat/bar/free dragging,
+  and a metronome with downbeat accents and count-in.
 - Keyboard shortcuts, a help sheet, a mini-player and a recent-tracks list.
 - Per-track state (position, speed, pitch, regions, active loop) in SQLite.
   State is reset when the file changes on disk.
@@ -232,7 +233,8 @@ First public release.
 
 ### [1.7.0] — 2026-11-11
 
-Релиз практического плеера. Поведение загрузок и библиотеки не изменилось.
+Релиз практического плеера с локальной сеткой долей. Поведение загрузок и
+библиотеки в основном не изменилось.
 
 #### Добавлено
 
@@ -449,6 +451,7 @@ First public release.
 - Уведомление Windows по завершении пакета.
 - Портативная структура: настройки и индекс в `data\`, медиа в `audio\` и `video\`.
 
+[1.7.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.7.0
 [1.6.2]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.2
 [1.6.1]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.1
 [1.6.0]: https://github.com/xmalinov/klipparkiv/releases/tag/v1.6.0
