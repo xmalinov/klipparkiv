@@ -75,14 +75,15 @@ sure which DMG you need.
 2. Wait for the metadata preview: title, channel, duration, thumbnail, formats.
 3. Choose **Audio**, **Video**, **Audio + Video** or **Clip**.
 4. Pick a destination folder and press **Download**.
-5. Open **Library** to search, filter and open a saved file in your system player.
+5. Open **Library** to search, filter and open a saved file in your system player,
+   or open audio in **Practice**.
 
 For a clip, enter a timecode such as `00:01:30-00:05:00`, or leave one side open
 to cut from the start or to the end. For a playlist, choose the whole list or only
 the linked video, optionally with an item range.
 
-The app does **not** include a built-in practice player yet. Playback uses the
-system player. That is the next major feature, not part of this release.
+Audio files open in the built-in **Practice** player: slow down, change pitch,
+loop a phrase, and mark sections. Video files and the system player are unchanged.
 
 ### Features
 
@@ -100,7 +101,9 @@ system player. That is the next major feature, not part of this release.
 - **Metadata preview** — title, channel, duration, thumbnail, formats.
 - **Download archive** — items you already saved are skipped (clips use
   deterministic filenames instead, so a second clip is not blocked).
-- **Library** — covers, search, filters, sorting, open in the system player.
+- **Library** - covers, search, filters, sorting, open in Practice or the system player.
+- **Practice** - audio-only player: 0.25–2.0 speed, ±12 semitones, volume,
+  A-B loops, named regions, waveform with zoom, keyboard shortcuts and a mini-player.
 - **App updates** — in-app banner, download verified with a Minisign signature,
   restart on your command.
 - **Update yt-dlp** from the UI.
@@ -321,15 +324,14 @@ for setup and checks. Bundled components keep their own licenses; see
 3. Выберите **«Аудио»**, **«Видео»**, **«Аудио + видео»** или **«Клип»**.
 4. Укажите папку и нажмите **«Скачать»**.
 5. Откройте **«Библиотеку»**, чтобы искать, фильтровать и открывать файл в
-   системном плеере.
+   системном плеере или в **Practice**.
 
 Для клипа введите таймкод, например `00:01:30-00:05:00`, или оставьте одну
 границу пустой, чтобы резать от начала или до конца. Для плейлиста выберите
 весь список или только видео по ссылке, при необходимости с диапазоном.
 
-Встроенного плеера для занятий в текущей версии **нет**. Воспроизведение
-открывается в системном плеере. Это следующая крупная функция, а не обещание
-этого релиза.
+Аудио открывается во встроенном плеере **Practice**: замедление, смена тона,
+луп фразы и разметка секций. Видео и системный плеер работают как раньше.
 
 ### Возможности
 
@@ -347,7 +349,11 @@ for setup and checks. Bundled components keep their own licenses; see
 - **Предпросмотр** — название, канал, длительность, обложка, форматы.
 - **Архив загрузок** — уже сохранённые элементы пропускаются (клипы не пишутся
   в архив: у них детерминированное имя, поэтому второй клип не блокируется).
-- **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в системном плеере.
+- **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в Practice или
+  системном плеере.
+- **Practice** — плеер только для аудио: скорость 0.25–2.0, ±12 полутонов,
+  громкость, A-B лупы, именованные регионы, волна с зумом, горячие клавиши
+  и мини-плеер.
 - **Обновления приложения** — баннер в окне, загрузка с проверкой подписи
   Minisign, перезапуск по команде.
 - **Обновление yt-dlp** из интерфейса.

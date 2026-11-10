@@ -55,6 +55,38 @@ The main frameworks are:
 - [npm packages](https://www.npmjs.com/) — per-package licenses in
   `package-lock.json`.
 
+### cpal
+
+- Project: <https://github.com/RustAudio/cpal>
+- License: Apache-2.0
+- License text: [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)
+- Used for native audio output.
+
+### Signalsmith Stretch
+
+- Project: <https://github.com/Signalsmith-Audio/signalsmith-stretch>
+- License: MIT
+- License text: [LICENSES/Signalsmith-Stretch-MIT.txt](LICENSES/Signalsmith-Stretch-MIT.txt)
+- Vendored C++ header: `src-tauri/cpp/signalsmith-stretch.h`.
+
+### Signalsmith Linear
+
+- Project: <https://github.com/Signalsmith-Audio/linear>
+- License: MIT
+- License text: [LICENSES/Signalsmith-Linear-MIT.txt](LICENSES/Signalsmith-Linear-MIT.txt)
+- Vendored headers: `src-tauri/cpp/signalsmith-linear/`.
+
+### Signalsmith Stretch C wrapper
+
+- Project: <https://github.com/colinmarc/signalsmith-stretch-rs>
+- License: MIT
+- License text: [LICENSES/Signalsmith-Stretch-RS-MIT.txt](LICENSES/Signalsmith-Stretch-RS-MIT.txt)
+- Vendored files: `src-tauri/cpp/wrapper.h`, `src-tauri/cpp/wrapper.cpp`.
+
+These components are compiled into the application binary and are not separate
+executables. They are used only for time-stretching and pitch-shifting audio
+playback.
+
 ## Content and trademarks
 
 Klipparkiv does not host, index or distribute media. It is a local front end

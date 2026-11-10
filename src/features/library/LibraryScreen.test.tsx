@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LibraryScreen from "./LibraryScreen";
@@ -76,7 +76,13 @@ describe("LibraryScreen", () => {
     await waitFor(
       () =>
         expect(invoke).toHaveBeenCalledWith("library_query", {
-          query: { search: "rick", kind: undefined, sort: "dateDesc" },
+          query: {
+            search: "rick",
+            kind: undefined,
+            sort: "dateDesc",
+            limit: 200,
+            offset: 0,
+          },
         }),
       { timeout: 2000 },
     );
@@ -92,7 +98,13 @@ describe("LibraryScreen", () => {
 
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("library_query", {
-        query: { search: undefined, kind: "video", sort: "dateDesc" },
+        query: {
+          search: undefined,
+          kind: "video",
+          sort: "dateDesc",
+          limit: 200,
+          offset: 0,
+        },
       }),
     );
   });
@@ -142,6 +154,37 @@ describe("LibraryScreen", () => {
 
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("library_scan", { full: true }),
+    );
+  });
+
+  it("loads the next page on scroll", async () => {
+    invoke.mockImplementation((command: string, args: { query?: { offset?: number } }) => {
+      if (command === "library_scan")
+        return Promise.resolve({ scanned: 2, added: 0, updated: 0, removed: 0 });
+      if (command === "library_query") {
+        return Promise.resolve(
+          args.query?.offset === 0
+            ? { items: [audio], total: 2 }
+            : { items: [video], total: 2 },
+        );
+      }
+      if (command === "library_thumb")
+        return Promise.resolve("data:image/jpeg;base64,AA==");
+      return Promise.resolve(null);
+    });
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+
+    const grid = document.querySelector(".lib-grid");
+    expect(grid).not.toBeNull();
+    fireEvent.scroll(grid!);
+
+    await screen.findByText("v1 - Clip");
+    expect(invoke).toHaveBeenCalledWith(
+      "library_query",
+      expect.objectContaining({
+        query: expect.objectContaining({ limit: 200, offset: 1 }),
+      }),
     );
   });
 });

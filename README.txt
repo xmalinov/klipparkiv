@@ -1,4 +1,4 @@
-Klipparkiv 1.6.2 — portable build for Windows
+Klipparkiv 1.7.0 - portable build for Windows
 ================================================
 
 English

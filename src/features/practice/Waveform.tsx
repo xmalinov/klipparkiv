@@ -1,0 +1,549 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { decodePeaks, type WaveformLevel } from "../../api/practice";
+import { useI18n } from "../../i18n";
+import { usePractice } from "./PracticeProvider";
+
+const MIN_VIEW_SECS = 0.5;
+
+function formatClock(seconds: number, precision = 1): string {
+  const safe = Math.max(0, seconds);
+  const minutes = Math.floor(safe / 60);
+  const rest = safe - minutes * 60;
+  return `${minutes}:${rest.toFixed(precision).padStart(precision > 0 ? 3 + precision : 2, "0")}`;
+}
+
+function pickLevel(
+  levels: WaveformLevel[],
+  viewSeconds: number,
+  width: number,
+): WaveformLevel | null {
+  if (levels.length === 0 || width <= 0) return null;
+  const target = viewSeconds / Math.max(1, width);
+  const sorted = [...levels].sort((left, right) => left.stepSecs - right.stepSecs);
+  let chosen = sorted[0];
+  for (const level of sorted) {
+    if (level.stepSecs <= target * 2) chosen = level;
+  }
+  return chosen;
+}
+
+type DragState =
+  | { kind: "create"; anchor: number; current: number }
+  | {
+      kind: "selection-move";
+      anchor: number;
+      start: number;
+      end: number;
+    }
+  | { kind: "selection-start"; fixed: number }
+  | { kind: "selection-end"; fixed: number }
+  | { kind: "region-start" | "region-end"; regionId: string; fixed: number };
+
+export default function Waveform({ height = 190 }: { height?: number }) {
+  const { t } = useI18n();
+  const {
+    waveform,
+    waveformLoading,
+    snapshot,
+    state,
+    duration,
+    selection,
+    seek,
+    setSelection,
+    selectRegion,
+    updateRegion,
+    loopRegion,
+    track,
+  } = usePractice();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [width, setWidth] = useState(0);
+  const [view, setView] = useState({ start: 0, end: 1 });
+  const [cursor, setCursor] = useState("crosshair");
+  const [regionPreview, setRegionPreview] = useState<{
+    id: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const trackRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (typeof ResizeObserver === "undefined") {
+      setWidth(canvas.clientWidth);
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      setWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    observer.observe(canvas);
+    setWidth(canvas.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const total = duration > 0 ? duration : 1;
+    if (trackRef.current !== track?.id) {
+      trackRef.current = track?.id ?? null;
+      setView({ start: 0, end: total });
+      return;
+    }
+    setView((current) =>
+      current.end <= 1.001 ||
+      current.end - current.start <= MIN_VIEW_SECS + 0.001
+        ? { start: 0, end: total }
+        : current,
+    );
+  }, [duration, track?.id]);
+
+  const viewDuration = Math.max(MIN_VIEW_SECS, view.end - view.start);
+  const level = useMemo(
+    () => pickLevel(waveform?.levels ?? [], viewDuration, width),
+    [viewDuration, waveform, width],
+  );
+  const peaks = useMemo(() => (level ? decodePeaks(level.peaks) : null), [level]);
+
+  const timeToX = useCallback(
+    (time: number) => ((time - view.start) / viewDuration) * width,
+    [view.start, viewDuration, width],
+  );
+  const xToTime = useCallback(
+    (x: number) => view.start + (x / Math.max(1, width)) * viewDuration,
+    [view.start, viewDuration, width],
+  );
+
+  const clampView = useCallback(
+    (start: number, end: number) => {
+      const total = Math.max(MIN_VIEW_SECS, duration);
+      const span = Math.min(total, Math.max(MIN_VIEW_SECS, end - start));
+      setView(() => {
+        let nextStart = Math.max(0, Math.min(start, total - span));
+        if (nextStart < 0) nextStart = 0;
+        return { start: nextStart, end: nextStart + span };
+      });
+    },
+    [duration],
+  );
+
+  const zoomAt = useCallback(
+    (factor: number, center: number) => {
+      const total = Math.max(MIN_VIEW_SECS, duration);
+      setView((current) => {
+        const currentSpan = Math.max(MIN_VIEW_SECS, current.end - current.start);
+        const nextSpan = Math.min(
+          total,
+          Math.max(MIN_VIEW_SECS, currentSpan * factor),
+        );
+        const ratio = (center - current.start) / currentSpan;
+        let start = center - ratio * nextSpan;
+        start = Math.max(0, Math.min(start, total - nextSpan));
+        return { start, end: start + nextSpan };
+      });
+    },
+    [duration],
+  );
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || width <= 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    context.fillStyle = "rgba(127, 145, 170, 0.08)";
+    context.fillRect(0, 0, width, height);
+    context.strokeStyle = "rgba(127, 145, 170, 0.18)";
+    context.beginPath();
+    context.moveTo(0, height / 2);
+    context.lineTo(width, height / 2);
+    context.stroke();
+
+    if (peaks) {
+      const buckets = Math.floor(peaks.length / 2);
+      const totalDuration = Math.max(0.1, waveform?.durationSecs || duration || 0.1);
+      const fromBucket = Math.max(
+        0,
+        Math.min(buckets, (view.start / totalDuration) * buckets),
+      );
+      const toBucket = Math.max(
+        fromBucket,
+        Math.min(buckets, (view.end / totalDuration) * buckets),
+      );
+      context.strokeStyle = "rgba(127, 160, 205, 0.85)";
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let x = 0; x < width; x += 1) {
+        const from = Math.floor(fromBucket + (x / width) * (toBucket - fromBucket));
+        const to = Math.max(
+          from + 1,
+          Math.floor(fromBucket + ((x + 1) / width) * (toBucket - fromBucket)),
+        );
+        let min = 127;
+        let max = -127;
+        for (let bucket = from; bucket < Math.min(to, buckets); bucket += 1) {
+          min = Math.min(min, peaks[bucket * 2]);
+          max = Math.max(max, peaks[bucket * 2 + 1]);
+        }
+        if (min > max) continue;
+        const top = height / 2 - (max / 127) * (height / 2 - 12);
+        const bottom = height / 2 - (min / 127) * (height / 2 - 12);
+        context.moveTo(x + 0.5, top);
+        context.lineTo(x + 0.5, bottom);
+      }
+      context.stroke();
+    }
+
+    const regions = state.regions.map((region) =>
+      regionPreview && regionPreview.id === region.id
+        ? { ...region, start: regionPreview.start, end: regionPreview.end }
+        : region,
+    );
+    for (const region of regions) {
+      const x1 = Math.max(0, timeToX(region.start));
+      const x2 = Math.min(width, timeToX(region.end));
+      if (x2 <= 0 || x1 >= width || x2 <= x1) continue;
+      context.fillStyle = `${region.color}33`;
+      context.fillRect(x1, 0, x2 - x1, height);
+      context.fillStyle = region.color;
+      context.fillRect(x1, 0, 2, height);
+      context.fillRect(x2 - 2, 0, 2, height);
+      context.font = "11px sans-serif";
+      context.fillStyle = region.color;
+      context.fillText(region.name, x1 + 5, 15);
+    }
+
+    if (selection) {
+      const x1 = Math.max(0, timeToX(selection.start));
+      const x2 = Math.min(width, timeToX(selection.end));
+      if (x2 > x1) {
+        context.fillStyle = "rgba(255, 255, 255, 0.14)";
+        context.fillRect(x1, 0, x2 - x1, height);
+        context.strokeStyle = "rgba(255, 255, 255, 0.55)";
+        context.setLineDash([4, 3]);
+        context.strokeRect(x1, 0.5, x2 - x1, height - 1);
+        context.setLineDash([]);
+        context.fillStyle = "rgba(255, 255, 255, 0.8)";
+        context.fillRect(x1 - 1, 0, 2, height);
+        context.fillRect(x2 - 1, 0, 2, height);
+      }
+    }
+
+    const playhead = timeToX(snapshot.positionSecs);
+    if (playhead >= 0 && playhead <= width) {
+      context.strokeStyle = "#ff8a4f";
+      context.lineWidth = 1.5;
+      context.beginPath();
+      context.moveTo(playhead, 0);
+      context.lineTo(playhead, height);
+      context.stroke();
+    }
+
+    context.font = "10px sans-serif";
+    context.fillStyle = "rgba(200, 210, 225, 0.65)";
+    const ticks = 8;
+    const precision = viewDuration < 2 ? 2 : viewDuration < 10 ? 1 : 0;
+    for (let index = 0; index <= ticks; index += 1) {
+      const time = view.start + (viewDuration * index) / ticks;
+      const x = (width * index) / ticks;
+      context.fillText(
+        formatClock(time, precision),
+        Math.min(width - 34, x + 3),
+        height - 5,
+      );
+    }
+  }, [
+    height,
+    peaks,
+    regionPreview,
+    selection,
+    snapshot.positionSecs,
+    state.regions,
+    timeToX,
+    view.start,
+    viewDuration,
+    waveform?.durationSecs,
+    duration,
+    width,
+  ]);
+
+  const total = Math.max(0.1, duration || 0.1);
+
+  function regionAt(time: number) {
+    return (
+      state.regions.find((region) => time >= region.start && time <= region.end) ??
+      null
+    );
+  }
+
+  function edgeTolerance() {
+    return width > 0 ? (7 / width) * viewDuration : 0.02;
+  }
+
+  function selectionEdgeAt(time: number) {
+    if (!selection) return null;
+    const tolerance = edgeTolerance();
+    if (Math.abs(time - selection.start) <= tolerance) return "start";
+    if (Math.abs(time - selection.end) <= tolerance) return "end";
+    return null;
+  }
+
+  function regionEdgeAt(time: number) {
+    const tolerance = edgeTolerance();
+    for (const region of state.regions) {
+      if (Math.abs(time - region.start) <= tolerance) {
+        return { region, edge: "start" as const };
+      }
+      if (Math.abs(time - region.end) <= tolerance) {
+        return { region, edge: "end" as const };
+      }
+    }
+    return null;
+  }
+
+  function pointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (event.button !== 0) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const time = xToTime(event.clientX - bounds.left);
+    const selectionEdge = selectionEdgeAt(time);
+    if (selectionEdge) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current =
+        selectionEdge === "start"
+          ? { kind: "selection-start", fixed: selection!.end }
+          : { kind: "selection-end", fixed: selection!.start };
+      setCursor("ew-resize");
+      return;
+    }
+    if (selection && time > selection.start && time < selection.end) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        kind: "selection-move",
+        anchor: time,
+        start: selection.start,
+        end: selection.end,
+      };
+      setCursor("grabbing");
+      return;
+    }
+    const regionEdge = regionEdgeAt(time);
+    if (regionEdge) {
+      selectRegion(regionEdge.region.id);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        kind: regionEdge.edge === "start" ? "region-start" : "region-end",
+        regionId: regionEdge.region.id,
+        fixed:
+          regionEdge.edge === "start"
+            ? regionEdge.region.end
+            : regionEdge.region.start,
+      };
+      setRegionPreview({
+        id: regionEdge.region.id,
+        start: regionEdge.region.start,
+        end: regionEdge.region.end,
+      });
+      setCursor("ew-resize");
+      return;
+    }
+    const region = regionAt(time);
+    if (region) {
+      selectRegion(region.id);
+      setSelection(null);
+      seek(time);
+      setCursor("pointer");
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { kind: "create", anchor: time, current: time };
+    setSelection(null);
+    setCursor("crosshair");
+  }
+
+  function pointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const time = xToTime(event.clientX - bounds.left);
+    const drag = dragRef.current;
+    if (!drag) {
+      if (selectionEdgeAt(time) || regionEdgeAt(time)) {
+        setCursor("ew-resize");
+      } else if (
+        selection &&
+        time > selection.start &&
+        time < selection.end
+      ) {
+        setCursor("grab");
+      } else if (regionAt(time)) {
+        setCursor("pointer");
+      } else {
+        setCursor("crosshair");
+      }
+      return;
+    }
+
+    switch (drag.kind) {
+      case "create":
+        drag.current = time;
+        setSelection({
+          start: Math.max(0, Math.min(drag.anchor, time)),
+          end: Math.min(total, Math.max(drag.anchor, time)),
+        });
+        break;
+      case "selection-move": {
+        const span = drag.end - drag.start;
+        let start = drag.start + (time - drag.anchor);
+        start = Math.max(0, Math.min(start, total - span));
+        setSelection({ start, end: start + span });
+        break;
+      }
+      case "selection-start": {
+        const end = drag.fixed;
+        setSelection({
+          start: Math.max(0, Math.min(time, end - 0.05)),
+          end,
+        });
+        break;
+      }
+      case "selection-end": {
+        const start = drag.fixed;
+        setSelection({
+          start,
+          end: Math.min(total, Math.max(time, start + 0.05)),
+        });
+        break;
+      }
+      case "region-start": {
+        const region = state.regions.find((entry) => entry.id === drag.regionId);
+        if (!region) break;
+        setRegionPreview({
+          id: region.id,
+          start: Math.max(0, Math.min(time, drag.fixed - 0.05)),
+          end: drag.fixed,
+        });
+        break;
+      }
+      case "region-end": {
+        const region = state.regions.find((entry) => entry.id === drag.regionId);
+        if (!region) break;
+        setRegionPreview({
+          id: region.id,
+          start: drag.fixed,
+          end: Math.min(total, Math.max(time, drag.fixed + 0.05)),
+        });
+        break;
+      }
+    }
+  }
+
+  function pointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setRegionPreview(null);
+    if (!drag) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const time = xToTime(event.clientX - bounds.left);
+
+    if (drag.kind === "create") {
+      if (Math.abs(time - drag.anchor) < 0.05) {
+        setSelection(null);
+        seek(Math.max(0, Math.min(total, time)));
+      }
+      return;
+    }
+
+    if (drag.kind === "selection-move") {
+      if (Math.abs(time - drag.anchor) < 0.01) {
+        seek(Math.max(0, Math.min(total, time)));
+      }
+      return;
+    }
+
+    if (drag.kind === "region-start" || drag.kind === "region-end") {
+      const region = state.regions.find((entry) => entry.id === drag.regionId);
+      if (!region) return;
+      const start =
+        drag.kind === "region-start"
+          ? Math.max(0, Math.min(time, drag.fixed - 0.05))
+          : drag.fixed;
+      const end =
+        drag.kind === "region-end"
+          ? Math.min(total, Math.max(time, drag.fixed + 0.05))
+          : drag.fixed;
+      updateRegion(region.id, { start, end });
+    }
+  }
+
+  function doubleClick(event: React.MouseEvent<HTMLCanvasElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const region = regionAt(xToTime(event.clientX - bounds.left));
+    if (region) loopRegion(region.id);
+  }
+
+  function wheel(event: React.WheelEvent<HTMLCanvasElement>) {
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const center = xToTime(event.clientX - bounds.left);
+    if (event.shiftKey) {
+      const delta = (event.deltaY / Math.max(1, width)) * viewDuration;
+      clampView(view.start + delta, view.end + delta);
+    } else {
+      zoomAt(event.deltaY > 0 ? 1.25 : 0.8, center);
+    }
+  }
+
+  return (
+    <div className="waveform-wrap">
+      <canvas
+        ref={canvasRef}
+        className="waveform-canvas"
+        style={{ height, cursor }}
+        aria-label={t("practice.selection")}
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
+        onPointerCancel={() => {
+          dragRef.current = null;
+          setRegionPreview(null);
+        }}
+        onDoubleClick={doubleClick}
+        onWheel={wheel}
+      />
+      {waveformLoading && (
+        <div className="waveform-overlay">{t("practice.waveformLoading")}</div>
+      )}
+      <div className="waveform-zoom">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={t("practice.zoomOut")}
+          title={t("practice.zoomOut")}
+          onClick={() => zoomAt(1.5, view.start + viewDuration / 2)}
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={t("practice.zoomIn")}
+          title={t("practice.zoomIn")}
+          onClick={() => zoomAt(0.66, view.start + viewDuration / 2)}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className="chip waveform-fit"
+          aria-label={t("practice.fit")}
+          title={t("practice.fit")}
+          onClick={() => setView({ start: 0, end: Math.max(MIN_VIEW_SECS, duration) })}
+        >
+          {t("practice.fit")}
+        </button>
+      </div>
+    </div>
+  );
+}

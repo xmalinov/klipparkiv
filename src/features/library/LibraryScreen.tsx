@@ -36,6 +36,8 @@ const SORTS: {
   { value: "channel", labelKey: "library.sort.channel" },
 ];
 
+const PAGE_SIZE = 200;
+
 function Cover({ item }: { item: LibraryItem }) {
   const [src, setSrc] = useState<string | null>(null);
 
@@ -88,7 +90,11 @@ function metaLine(item: LibraryItem, language: "ru" | "en"): string {
     .join(" · ");
 }
 
-export default function LibraryScreen() {
+export default function LibraryScreen({
+  onPractice,
+}: {
+  onPractice?: (item: LibraryItem) => void;
+}) {
   const { language, t } = useI18n();
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<MediaKind | undefined>(undefined);
@@ -96,6 +102,7 @@ export default function LibraryScreen() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [page, setPage] = useState<LibraryPage>({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ item: LibraryItem; x: number; y: number } | null>(
@@ -103,6 +110,8 @@ export default function LibraryScreen() {
   );
   const [tick, setTick] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  const versionRef = useRef(0);
+  const loadingMoreRef = useRef(false);
 
   const refresh = useCallback((full: boolean) => {
     setScanning(true);
@@ -120,21 +129,26 @@ export default function LibraryScreen() {
 
   useEffect(() => {
     let alive = true;
+    const version = ++versionRef.current;
     const run = () => {
       setLoading(true);
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
       queryLibrary({
         search: search.trim() || undefined,
         kind,
         sort,
+        limit: PAGE_SIZE,
+        offset: 0,
       })
         .then((result) => {
-          if (alive) setPage(result);
+          if (alive && versionRef.current === version) setPage(result);
         })
         .catch((cause: unknown) => {
-          if (alive) setError(String(cause));
+          if (alive && versionRef.current === version) setError(String(cause));
         })
         .finally(() => {
-          if (alive) setLoading(false);
+          if (alive && versionRef.current === version) setLoading(false);
         });
     };
     const timer = setTimeout(run, search ? 250 : 0);
@@ -143,6 +157,52 @@ export default function LibraryScreen() {
       clearTimeout(timer);
     };
   }, [search, kind, sort, tick]);
+
+  const loadMore = useCallback(() => {
+    if (
+      loading ||
+      loadingMoreRef.current ||
+      page.items.length >= page.total
+    ) {
+      return;
+    }
+    const version = versionRef.current;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    queryLibrary({
+      search: search.trim() || undefined,
+      kind,
+      sort,
+      limit: PAGE_SIZE,
+      offset: page.items.length,
+    })
+      .then((result) => {
+        if (versionRef.current !== version) return;
+        setPage((current) => ({
+          items: [...current.items, ...result.items],
+          total: result.total,
+        }));
+      })
+      .catch((cause: unknown) => {
+        if (versionRef.current === version) setError(String(cause));
+      })
+      .finally(() => {
+        if (versionRef.current === version) {
+          loadingMoreRef.current = false;
+          setLoadingMore(false);
+        }
+      });
+  }, [kind, loading, page.items.length, page.total, search, sort]);
+
+  function onScroll(event: React.UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    if (
+      element.scrollHeight - element.scrollTop - element.clientHeight <
+      300
+    ) {
+      loadMore();
+    }
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -167,6 +227,14 @@ export default function LibraryScreen() {
     } catch (cause) {
       setError(t("library.openError", { error: String(cause) }));
     }
+  }
+
+  function activate(item: LibraryItem) {
+    if (item.kind === "audio" && onPractice) {
+      onPractice(item);
+      return;
+    }
+    play(item);
   }
 
   async function reveal(item: LibraryItem) {
@@ -306,16 +374,16 @@ export default function LibraryScreen() {
       ) : empty ? (
         <p className="queue-empty">{t("library.noResults")}</p>
       ) : view === "grid" ? (
-        <div className="lib-grid">
+        <div className="lib-grid" onScroll={onScroll}>
           {page.items.map((item) => (
             <div
               key={item.id}
               className="media-card"
               role="button"
               tabIndex={0}
-              onDoubleClick={() => play(item)}
+              onDoubleClick={() => activate(item)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") play(item);
+                if (event.key === "Enter") activate(item);
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -342,7 +410,7 @@ export default function LibraryScreen() {
           ))}
         </div>
       ) : (
-        <div className="lib-list">
+        <div className="lib-list" onScroll={onScroll}>
           <div className="list-head">
             <span>{t("library.colTitle")}</span>
             <span>{t("library.colType")}</span>
@@ -357,9 +425,9 @@ export default function LibraryScreen() {
               className="list-row"
               role="button"
               tabIndex={0}
-              onDoubleClick={() => play(item)}
+              onDoubleClick={() => activate(item)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") play(item);
+                if (event.key === "Enter") activate(item);
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -390,6 +458,15 @@ export default function LibraryScreen() {
           <button type="button" role="menuitem" onClick={() => play(menu.item)}>
             {t("library.menu.play")}
           </button>
+          {menu.item.kind === "audio" && onPractice && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onPractice(menu.item)}
+            >
+              {t("library.menu.practice")}
+            </button>
+          )}
           <button type="button" role="menuitem" onClick={() => reveal(menu.item)}>
             {t("library.menu.reveal")}
           </button>
@@ -409,7 +486,9 @@ export default function LibraryScreen() {
       <footer className="lib-footer">
         {scanning
           ? t("library.scanning")
-          : t("library.filesCount", { count: page.total })}
+          : loadingMore
+            ? t("library.loadingMore")
+            : t("library.filesCount", { count: page.total })}
       </footer>
     </div>
   );

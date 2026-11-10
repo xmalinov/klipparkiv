@@ -1,6 +1,6 @@
 [package]
 name = "klipparkiv"
-version = "1.6.2"
+version = "1.7.0"
 description = "Offline media library for backing tracks and lessons: audio, video, clips and playlists"
 authors = ["Klipparkiv contributors"]
 edition = "2024"
@@ -17,6 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+cc = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
@@ -39,6 +40,7 @@ url = "2"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 tar = "0.4"
 plist = "1"
+cpal = "0.18"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -3,17 +3,20 @@ import { formatVersion, loadAppInfo, type AppInfo } from "./api/appInfo";
 import { applyTheme, getSettings } from "./api/settings";
 import DownloadScreen from "./features/download/DownloadScreen";
 import LibraryScreen from "./features/library/LibraryScreen";
+import MiniPlayer from "./features/practice/MiniPlayer";
+import PracticeScreen from "./features/practice/PracticeScreen";
+import { PracticeProvider, usePractice } from "./features/practice/PracticeProvider";
 import SettingsDialog from "./features/settings/SettingsDialog";
 import UpdateBanner from "./features/updates/UpdateBanner";
 import { useI18n, type Translate } from "./i18n";
 import "./styles/tokens.css";
 import "./App.css";
 
-type Screen = "download" | "library";
+type Screen = "download" | "library" | "practice";
 
 const NAV: {
   id: Screen;
-  labelKey: "nav.download" | "nav.library";
+  labelKey: "nav.download" | "nav.library" | "nav.practice";
   icon: React.ReactNode;
 }[] = [
   {
@@ -37,6 +40,15 @@ const NAV: {
       </svg>
     ),
   },
+  {
+    id: "practice",
+    labelKey: "nav.practice",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 12h3l2-7 4 14 3-9 2 2h4" />
+      </svg>
+    ),
+  },
 ];
 
 function missingBinaries(info: AppInfo) {
@@ -48,7 +60,16 @@ function environmentWarnings(info: AppInfo, t: Translate): string[] {
 }
 
 export default function App() {
+  return (
+    <PracticeProvider>
+      <AppShell />
+    </PracticeProvider>
+  );
+}
+
+function AppShell() {
   const { t } = useI18n();
+  const { track, openTrack } = usePractice();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>("download");
@@ -101,9 +122,11 @@ export default function App() {
 
       <div className="main">
         <header className="header">
-          <h1>{screen === "download" ? t("nav.download") : t("nav.library")}</h1>
+          <h1>{screen === "download" ? t("nav.download") : screen === "library" ? t("nav.library") : t("practice.title")}</h1>
           <div className="header-right">
-            <span>{t(info?.installKind === "installed" ? "app.installedMode" : "app.portableMode")}</span>
+            <span className="mode-label">
+              {t(info?.installKind === "installed" ? "app.installedMode" : "app.portableMode")}
+            </span>
             <button
               type="button"
               className="icon-btn"
@@ -155,10 +178,21 @@ export default function App() {
 
           {screen === "download" ? (
             <DownloadScreen root={info?.root} />
+          ) : screen === "library" ? (
+            <LibraryScreen
+              onPractice={(item) => {
+                openTrack(item);
+                setScreen("practice");
+              }}
+            />
           ) : (
-            <LibraryScreen />
+            <PracticeScreen onBack={() => setScreen("library")} />
           )}
         </main>
+
+        {track && screen !== "practice" && (
+          <MiniPlayer onOpen={() => setScreen("practice")} />
+        )}
 
         <footer className="statusbar">
           <span className="root" title={info?.root}>

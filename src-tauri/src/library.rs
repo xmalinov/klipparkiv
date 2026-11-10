@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::WalkDir;
@@ -29,6 +29,13 @@ CREATE TABLE IF NOT EXISTS media (
 );
 CREATE INDEX IF NOT EXISTS media_mtime ON media(mtime);
 CREATE INDEX IF NOT EXISTS media_kind ON media(kind);
+CREATE TABLE IF NOT EXISTS practice (
+  path TEXT PRIMARY KEY,
+  mtime INTEGER NOT NULL,
+  state_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  hidden INTEGER NOT NULL DEFAULT 0
+);
 ";
 
 const AUDIO_EXT: &[&str] = &["mp3", "m4a", "opus", "flac", "wav", "aac"];
@@ -46,9 +53,139 @@ impl Library {
         }
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA)?;
+        // Existing 1.7.0 development databases may predate the hidden column.
+        let has_hidden = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('practice') WHERE name = 'hidden'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_hidden {
+            let _ = conn.execute(
+                "ALTER TABLE practice ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+                [],
+            );
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Returns the saved practice state when the file has not changed since it
+    /// was written. A changed mtime invalidates and removes the row.
+    pub fn practice_get(&self, path: &str, mtime: i64) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        let row: Option<(i64, String)> = conn
+            .query_row(
+                "SELECT mtime, state_json FROM practice WHERE path = ?1",
+                params![path],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+
+        match row {
+            Some((saved_mtime, state)) if saved_mtime == mtime => Ok(Some(state)),
+            Some(_) => {
+                conn.execute("DELETE FROM practice WHERE path = ?1", params![path])
+                    .map_err(|error| error.to_string())?;
+                Ok(None)
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn practice_save(
+        &self,
+        path: &str,
+        mtime: i64,
+        state_json: &str,
+        updated_at: i64,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        conn.execute(
+            "INSERT INTO practice(path, mtime, state_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(path) DO UPDATE SET
+               mtime = excluded.mtime,
+               state_json = excluded.state_json,
+               updated_at = excluded.updated_at",
+            params![path, mtime, state_json, updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    pub fn practice_delete(&self, path: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        conn.execute("DELETE FROM practice WHERE path = ?1", params![path])
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    pub fn practice_recent(&self, limit: u32) -> Result<Vec<LibraryItem>, String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        let mut statement = conn
+            .prepare(
+                "SELECT m.path, m.kind, m.title, m.channel, m.duration_secs,
+                        m.width, m.height, m.size_bytes, m.mtime, m.thumb_path
+                 FROM practice p
+                 JOIN media m ON m.path = p.path
+                 WHERE p.hidden = 0
+                 ORDER BY p.updated_at DESC
+                 LIMIT ?1",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![limit], |row| {
+                Ok(LibraryItem {
+                    id: row.get::<_, String>(0)?,
+                    path: row.get::<_, String>(0)?,
+                    kind: row.get(1)?,
+                    title: row.get(2)?,
+                    channel: row.get(3)?,
+                    duration_secs: row.get(4)?,
+                    width: row.get(5)?,
+                    height: row.get(6)?,
+                    size_bytes: row.get::<_, i64>(7)? as u64,
+                    mtime: row.get(8)?,
+                    thumb_path: row.get(9)?,
+                })
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    pub fn practice_prune(&self) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        conn.execute(
+            "DELETE FROM practice WHERE path NOT IN (SELECT path FROM media)",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    pub fn practice_hide(&self, path: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        conn.execute(
+            "UPDATE practice SET hidden = 1 WHERE path = ?1",
+            params![path],
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    pub fn practice_unhide(&self, path: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        conn.execute(
+            "UPDATE practice SET hidden = 0 WHERE path = ?1",
+            params![path],
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
     }
 }
 
@@ -572,9 +709,11 @@ pub async fn library_scan(app: AppHandle, full: bool) -> Result<ScanStats, Strin
         let root = paths.root().to_path_buf();
         let ffprobe = paths.ffprobe();
         let depth = app_for_scan.state::<SettingsStore>().get().scan_depth;
-        scan_dir(&library, &root, &ffprobe, depth, full, |scanned| {
+        let stats = scan_dir(&library, &root, &ffprobe, depth, full, |scanned| {
             let _ = app_for_scan.emit("library://scan-progress", scanned);
-        })
+        })?;
+        library.practice_prune().ok();
+        Ok::<ScanStats, String>(stats)
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -587,6 +726,8 @@ pub async fn library_scan(app: AppHandle, full: bool) -> Result<ScanStats, Strin
 pub fn library_remove(library: State<'_, Library>, id: String) -> Result<(), String> {
     let conn = library.conn.lock().map_err(|error| error.to_string())?;
     conn.execute("DELETE FROM media WHERE path = ?1", params![id])
+        .map_err(|error| error.to_string())?;
+    conn.execute("DELETE FROM practice WHERE path = ?1", params![id])
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -847,5 +988,132 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn practice_state_is_invalidated_by_mtime() {
+        let fixture = fixture("practice-mtime");
+        let path = "C:\\root\\audio\\a.mp3";
+        fixture
+            .library
+            .practice_save(path, 10, "{\"version\":1}", 100)
+            .unwrap();
+        assert_eq!(
+            fixture.library.practice_get(path, 10).unwrap().as_deref(),
+            Some("{\"version\":1}")
+        );
+        assert!(fixture.library.practice_get(path, 11).unwrap().is_none());
+        assert!(fixture.library.practice_get(path, 10).unwrap().is_none());
+    }
+
+    #[test]
+    fn practice_rows_are_pruned_with_missing_media() {
+        let fixture = fixture("practice-prune");
+        fixture
+            .library
+            .practice_save("missing.mp3", 1, "{}", 1)
+            .unwrap();
+        fixture.library.practice_prune().unwrap();
+        assert!(
+            fixture
+                .library
+                .practice_get("missing.mp3", 1)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn hidden_practice_rows_disappear_from_recent() {
+        let fixture = fixture("practice-hidden");
+        {
+            let conn = fixture.library.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO media(path, kind, title, channel, duration_secs, width, height, size_bytes, mtime, thumb_path, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    "a.mp3",
+                    "audio",
+                    "A",
+                    None::<String>,
+                    None::<f64>,
+                    None::<u32>,
+                    None::<u32>,
+                    1_i64,
+                    1_i64,
+                    None::<String>,
+                    1_i64
+                ],
+            )
+            .unwrap();
+        }
+        fixture.library.practice_save("a.mp3", 1, "{}", 1).unwrap();
+        assert_eq!(fixture.library.practice_recent(10).unwrap().len(), 1);
+        fixture.library.practice_hide("a.mp3").unwrap();
+        assert_eq!(fixture.library.practice_recent(10).unwrap().len(), 0);
+        fixture.library.practice_save("a.mp3", 1, "{}", 2).unwrap();
+        assert_eq!(fixture.library.practice_recent(10).unwrap().len(), 0);
+        fixture.library.practice_unhide("a.mp3").unwrap();
+        assert_eq!(fixture.library.practice_recent(10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn query_page_pages_through_a_large_library() {
+        let fixture = fixture("bulk-query");
+        {
+            let mut conn = fixture.library.conn.lock().unwrap();
+            let transaction = conn.transaction().unwrap();
+            for index in 0..1000 {
+                transaction
+                    .execute(
+                        "INSERT INTO media(path, kind, title, channel, duration_secs, width, height, size_bytes, mtime, thumb_path, indexed_at)
+                         VALUES (?1, 'audio', ?2, NULL, NULL, NULL, NULL, 1, 1, NULL, 1)",
+                        params![format!("audio/{index}.mp3"), format!("Track {index}")],
+                    )
+                    .unwrap();
+            }
+            transaction.commit().unwrap();
+        }
+
+        let first = query_page(
+            &fixture.library,
+            &LibraryQuery {
+                search: None,
+                kind: None,
+                sort: "title".into(),
+                limit: Some(200),
+                offset: Some(0),
+            },
+        )
+        .unwrap();
+        assert_eq!(first.items.len(), 200);
+        assert_eq!(first.total, 1000);
+
+        let last = query_page(
+            &fixture.library,
+            &LibraryQuery {
+                search: None,
+                kind: None,
+                sort: "title".into(),
+                limit: Some(200),
+                offset: Some(800),
+            },
+        )
+        .unwrap();
+        assert_eq!(last.items.len(), 200);
+        assert_eq!(last.total, 1000);
+
+        let beyond = query_page(
+            &fixture.library,
+            &LibraryQuery {
+                search: None,
+                kind: None,
+                sort: "title".into(),
+                limit: Some(200),
+                offset: Some(1000),
+            },
+        )
+        .unwrap();
+        assert!(beyond.items.is_empty());
     }
 }

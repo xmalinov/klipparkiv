@@ -5,6 +5,7 @@ mod i18n;
 mod library;
 mod metadata;
 mod paths;
+pub mod practice;
 mod process;
 mod progress;
 mod settings;
@@ -123,6 +124,7 @@ pub fn run() {
     let settings_store = SettingsStore::load(paths.data().join("settings.json"));
     let tasks = Arc::new(TaskStore::default());
     tasks.set_concurrency(settings_store.get().concurrency);
+    let practice = practice::PracticeState::new(paths.ffmpeg());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -138,6 +140,7 @@ pub fn run() {
         .manage(library)
         .manage(settings_store)
         .manage(tasks)
+        .manage(practice)
         .manage(UpdateStore::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -201,6 +204,7 @@ pub fn run() {
                 builder.build(app)?;
             }
             updater::schedule_startup_check(app.handle().clone());
+            practice::spawn_events(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -227,7 +231,22 @@ pub fn run() {
             library::library_scan,
             library::library_open,
             library::library_remove,
-            library::library_thumb
+            library::library_thumb,
+            practice::practice_open,
+            practice::practice_play,
+            practice::practice_pause,
+            practice::practice_seek,
+            practice::practice_set_speed,
+            practice::practice_set_pitch,
+            practice::practice_set_volume,
+            practice::practice_set_loop,
+            practice::practice_position,
+            practice::practice_state_get,
+            practice::practice_state_save,
+            practice::practice_recent,
+            practice::practice_recent_hide,
+            practice::practice_waveform,
+            practice::practice_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

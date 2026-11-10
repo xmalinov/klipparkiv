@@ -10,6 +10,65 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.7.0] — 2026-11-10
+
+Practice player release. Download and library behaviour is unchanged.
+
+#### Added
+
+- Built-in audio practice player: waveform with zoom, click-to-seek and
+  drag selection.
+- Speed 0.25–2.0 without pitch change, and pitch ±12 semitones plus cents,
+  independent of speed.
+- A-B loops and named regions (intro, verse, chorus, solo, bridge, outro,
+  custom) with a 2 s pre-roll.
+- Short loops play seamlessly from memory; loops longer than 2 minutes restart
+  the decoder with a short gap.
+- Keyboard shortcuts, a help sheet, a mini-player and a recent-tracks list.
+- Per-track state (position, speed, pitch, regions, active loop) in SQLite.
+  State is reset when the file changes on disk.
+- Volume control 0–100%, saved with the track.
+- Explicit A/B buttons and per-region loop/edit/delete actions.
+- Pitch uses the musician-friendly ♭/♯ buttons.
+- Waveform peaks cached in `data\waveforms`.
+- Russian and English UI for the practice screen.
+
+#### Changed
+
+- Double-clicking an audio item opens Practice. Video items and the system
+  player behave as before.
+- The library context menu has "Open in Practice" for audio.
+- Library results load in pages of 200 and append on scroll, so libraries with
+  thousands of items are fully reachable without rendering everything at once.
+
+#### Fixed
+
+- Practice uses a single centered column: controls, regions and recent tracks
+  stack below the waveform instead of leaving a large empty area.
+- Custom speed can be typed (0.25–2.0, step 0.05) next to the presets.
+- Waveform zoom is anchored to the cursor and no longer jumps back.
+- Region and selection edges can be dragged; the selection can be moved, and a
+  click inside it seeks.
+- Recent tracks can be removed from the recent list without deleting them from
+  the library or losing their practice state.
+- The portable-mode label is vertically centered with the settings button, and
+  library cards are no longer clipped at the top or left edge.
+- Clicking a region now also moves the playhead, so the position cursor can be
+  placed anywhere even with an active region.
+- The active region and its loop button are highlighted; switching works by
+  clicking a row or pressing 1–9.
+- Empty region and recent lists align with their panel headers.
+- Region and recent lists no longer scroll internally: the whole Practice
+  screen scrolls when the window is too short.
+- Removed the redundant "st" suffix from the pitch value.
+
+#### Notes
+
+- Audio only in this release; video and spectrum/chord analysis are not part
+  of 1.7.0.
+- The audio engine is native (ffmpeg → Signalsmith Stretch → cpal), so the
+  practice player is not limited by WebView audio codecs.
+
 ### [1.6.2] — 2026-11-09
 
 Diagnostics release. Download and library behaviour is unchanged.
@@ -150,6 +209,64 @@ First public release.
 - Portable layout: settings and index in `data\`, media in `audio\` and `video\`.
 
 ## Русский
+
+### [1.7.0] — 2026-11-10
+
+Релиз практического плеера. Поведение загрузок и библиотеки не изменилось.
+
+#### Добавлено
+
+- Встроенный практический аудиоплеер: волна с зумом, перемотка кликом и
+  выделение фрагмента мышью.
+- Скорость 0.25–2.0 без изменения тона и тон ±12 полутонов плюс центы,
+  независимо от скорости.
+- A-B лупы и именованные регионы (интро, куплет, припев, соло, бридж, аутро,
+  своё) с предроллом 2 с.
+- Короткие лупы играют бесшовно из памяти; лупы длиннее 2 минут перезапускают
+  декодер с коротким разрывом.
+- Горячие клавиши, шпаргалка, мини-плеер и список недавних треков.
+- Состояние на трек (позиция, скорость, тон, регионы, активный луп) в SQLite.
+  При изменении файла на диске состояние сбрасывается.
+- Громкость 0–100%, сохраняется вместе с треком.
+- Явные кнопки A/B и действия региона «луп / изменить / удалить».
+- Тон через удобные музыканту кнопки ♭/♯.
+- Кэш пиков волны в `data\waveforms`.
+- Русский и английский интерфейс практики.
+
+#### Изменено
+
+- Двойной клик по аудио открывает Practice. Видео и системный плеер работают
+  как раньше.
+- В контекстном меню библиотеки появился пункт «Открыть в практике».
+- Библиотека загружает результаты по 200 и добавляет следующие при прокрутке,
+  поэтому тысячи элементов доступны без отрисовки всего списка сразу.
+
+#### Исправлено
+
+- Practice теперь одна центрированная колонка: контролы, регионы и недавние
+  треки идут под волной, без большого пустого места.
+- Свою скорость можно ввести вручную (0.25–2.0, шаг 0.05) рядом с пресетами.
+- Зум волны привязан к курсору и больше не сбрасывается.
+- Границы регионов и выделения можно перетаскивать; выделение можно двигать,
+  клик внутри — перемотка.
+- Трек можно убрать из недавних, не удаляя его из библиотеки и не теряя
+  состояние практики.
+- Подпись «портативный режим» выровнена по центру с шестерёнкой, а карточки
+  библиотеки больше не обрезаются сверху и слева.
+- Клик по региону теперь двигает оранжевый курсор, поэтому позицию можно
+  поставить в любое место даже при активном регионе.
+- Активный регион и его кнопка лупа подсвечиваются; переключение — клик по
+  строке или клавишами 1–9.
+- Пустые списки регионов и недавних выровнены по заголовкам панелей.
+- Списки регионов и недавних больше не скроллятся внутри: при маленьком окне
+  прокручивается весь экран Practice.
+- Убрал лишний суффикс «пт» у значения тона.
+
+#### Примечания
+
+- В этом релизе только аудио; видео, спектр и анализ аккордов в 1.7.0 не входят.
+- Аудиодвижок нативный (ffmpeg → Signalsmith Stretch → cpal), поэтому плеер
+  не зависит от аудиокодеков WebView.
 
 ### [1.6.2] — 2026-11-09
 
