@@ -21,6 +21,11 @@ npm run tauri dev
 You need Node.js 24+ and Rust stable. Windows also needs MSVC Build Tools and
 WebView2; macOS needs Xcode Command Line Tools.
 
+The dev profile optimizes the beat-tracking dependencies (`beat-this` and
+`rten`). Their unoptimized inference is roughly 150× slower, which makes grid
+analysis on a one-minute track look like a hang. The first `tauri dev` build
+therefore compiles those crates with optimizations and takes longer.
+
 For real downloads:
 
 - Windows: put `yt-dlp.exe`, `ffmpeg.exe` and `ffprobe.exe` into `bin\`.
