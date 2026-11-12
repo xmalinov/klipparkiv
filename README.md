@@ -103,6 +103,10 @@ files and the system player are unchanged.
 - **Download archive** — items you already saved are skipped (clips use
   deterministic filenames instead, so a second clip is not blocked).
 - **Library** - covers, search, filters, sorting, open in Practice or the system player.
+- **Import local files** - drag audio or video from Explorer/Finder into the
+  Library, or into Practice to copy and open the first audio paused. Files are
+  copied into `audio/`/`video/`, tags and covers are read, duplicates are skipped;
+  the **Add files…** dialog does the same without dragging.
 - **Practice** - audio-only player: 0.25–2.0 speed, ±12 semitones, volume,
   A-B loops, named regions, BPM/beat grid, bar-snapped loops, metronome and
   count-in, waveform with zoom, keyboard shortcuts and a mini-player.

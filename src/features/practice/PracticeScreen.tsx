@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { openMedia } from "../../api/library";
 import { formatDuration } from "../../api/tasks";
 import type { PracticeRegion, RegionKind } from "../../api/practice";
 import { useI18n, type TranslationKey } from "../../i18n";
+import DropOverlay from "../library/DropOverlay";
+import { useImport } from "../library/ImportProvider";
+import { MEDIA_EXTENSIONS } from "../library/mediaExtensions";
+import { useFileDrop } from "../library/useFileDrop";
 import RegionDialog, { type RegionDraft } from "./RegionDialog";
 import { REGION_COLORS, usePractice } from "./PracticeProvider";
 import Waveform from "./Waveform";
@@ -294,6 +299,74 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
   } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [speedText, setSpeedText] = useState(String(state.speed));
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const importer = useImport();
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const importPaths = useCallback(
+    async (paths: string[]) => {
+      if (!importer) return;
+      setImportNotice(null);
+      try {
+        const report = await importer.startImport(paths);
+        if (report.cancelled) {
+          setImportNotice(t("library.importCancelled"));
+          return;
+        }
+        const items = [...report.imported, ...report.existing];
+        const firstAudio = items.find((item) => item.kind === "audio");
+        const hasVideo = items.some((item) => item.kind === "video");
+        if (firstAudio) {
+          // Opens paused; grid analysis starts inside openTrack.
+          if (mountedRef.current) await openTrack(firstAudio);
+          if (hasVideo) setImportNotice(t("practice.videoNotPractice"));
+          return;
+        }
+        if (hasVideo) {
+          setImportNotice(t("practice.videoNotPractice"));
+        } else if (report.skipped.some((skip) => skip.reason === "folder")) {
+          setImportNotice(t("library.importFolderHint"));
+        } else if (report.failed.length > 0) {
+          setImportNotice(
+            report.failed[0]?.error ?? t("practice.importUnsupported"),
+          );
+        } else if (items.length === 0) {
+          setImportNotice(t("practice.importUnsupported"));
+        }
+      } catch (cause) {
+        setImportNotice(cause instanceof Error ? cause.message : String(cause));
+      }
+    },
+    [importer, openTrack, t],
+  );
+
+  const drop = useFileDrop({ onDrop: importPaths });
+
+  const addFiles = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [
+          { name: t("library.mediaFilter"), extensions: MEDIA_EXTENSIONS },
+        ],
+      });
+      const paths = Array.isArray(selected)
+        ? selected
+        : selected
+          ? [selected]
+          : [];
+      if (paths.length > 0) await importPaths(paths);
+    } catch (cause) {
+      setImportNotice(String(cause));
+    }
+  }, [importPaths, t]);
 
   useEffect(() => {
     setSpeedText(String(state.speed));
@@ -485,6 +558,12 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
       <div className="practice practice-opening" role="status">
         <span className="spinner" aria-hidden="true" />
         <p>{t("practice.opening")}</p>
+        {drop.dragging && (
+          <DropOverlay
+            title={t("practice.dropActive")}
+            hint={t("practice.dropHint")}
+          />
+        )}
       </div>
     );
   }
@@ -498,6 +577,26 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
           <circle cx="18" cy="16" r="3" />
         </svg>
         <p>{t("practice.empty")}</p>
+        <p className="practice-empty-hint">{t("practice.emptyHint")}</p>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={addFiles}
+          disabled={importer?.importing}
+        >
+          {t("practice.addFiles")}
+        </button>
+        {importNotice && (
+          <p className="banner" role="status">
+            {importNotice}
+          </p>
+        )}
+        {drop.dragging && (
+          <DropOverlay
+            title={t("practice.dropActive")}
+            hint={t("practice.dropHint")}
+          />
+        )}
       </div>
     );
   }
@@ -514,6 +613,14 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
         <button
           type="button"
           className="btn ghost"
+          onClick={addFiles}
+          disabled={importer?.importing}
+        >
+          {t("practice.addFiles")}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
           onClick={() => openMedia(track.path)}
         >
           {t("practice.systemPlayer")}
@@ -523,6 +630,12 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
       {error && (
         <p className="banner" role="alert">
           {t("practice.error", { error })}
+        </p>
+      )}
+
+      {importNotice && (
+        <p className="banner" role="status">
+          {importNotice}
         </p>
       )}
 
@@ -898,6 +1011,13 @@ export default function PracticeScreen({ onBack }: { onBack: () => void }) {
             </div>
           </div>
         </div>
+      )}
+
+      {drop.dragging && (
+        <DropOverlay
+          title={t("practice.dropActive")}
+          hint={t("practice.dropHint")}
+        />
       )}
     </div>
   );

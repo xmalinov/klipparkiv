@@ -1,14 +1,50 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LibraryScreen from "./LibraryScreen";
-import type { LibraryItem, LibraryPage } from "../../api/library";
+import type {
+  ImportReport,
+  LibraryItem,
+  LibraryPage,
+} from "../../api/library";
 
 const invoke = vi.hoisted(() => vi.fn());
 const revealItemInDir = vi.hoisted(() => vi.fn());
+const startImport = vi.hoisted(() => vi.fn());
+const openDialog = vi.hoisted(() => vi.fn());
+const dropState = vi.hoisted(() => ({
+  handler: null as null | ((paths: string[]) => unknown),
+  dragging: false,
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openDialog }));
+vi.mock("./ImportProvider", () => ({
+  useImport: () => ({
+    progress: null,
+    importing: false,
+    cancelling: false,
+    error: null,
+    startImport,
+    cancelImport: vi.fn(),
+    clearError: vi.fn(),
+  }),
+}));
+vi.mock("./useFileDrop", () => ({
+  useFileDrop: ({ onDrop }: { onDrop: (paths: string[]) => unknown }) => {
+    dropState.handler = onDrop;
+    return { dragging: dropState.dragging };
+  },
+}));
+
+const emptyReport: ImportReport = {
+  imported: [],
+  existing: [],
+  skipped: [],
+  failed: [],
+  cancelled: false,
+};
 
 const audio: LibraryItem = {
   id: "C:\\root\\audio\\abc - Song.mp3",
@@ -52,6 +88,10 @@ describe("LibraryScreen", () => {
   beforeEach(() => {
     invoke.mockReset();
     revealItemInDir.mockReset();
+    startImport.mockReset();
+    openDialog.mockReset();
+    dropState.handler = null;
+    dropState.dragging = false;
   });
 
   it("renders scanned items", async () => {
@@ -186,5 +226,129 @@ describe("LibraryScreen", () => {
         query: expect.objectContaining({ limit: 200, offset: 1 }),
       }),
     );
+  });
+
+  it("imports dropped files and refreshes without a full scan", async () => {
+    setup();
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+    invoke.mockClear();
+    startImport.mockResolvedValue({ ...emptyReport, imported: [audio] });
+
+    await act(async () => {
+      await dropState.handler!(["C:\\src\\new.mp3"]);
+    });
+
+    expect(startImport).toHaveBeenCalledWith(["C:\\src\\new.mp3"]);
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("library_query", expect.anything()),
+    );
+    expect(invoke).not.toHaveBeenCalledWith("library_scan", expect.anything());
+  });
+
+  it("summarizes imported, existing, skipped and failed files", async () => {
+    setup();
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+    startImport.mockResolvedValue({
+      ...emptyReport,
+      imported: [audio],
+      existing: [video],
+      skipped: [
+        { path: "C:\\src\\lesson", reason: "folder" },
+        { path: "C:\\src\\notes.pdf", reason: "unsupported" },
+      ],
+      failed: [{ path: "C:\\src\\broken.mp3", error: "read error" }],
+    });
+
+    await act(async () => {
+      await dropState.handler!(["C:\\src\\lesson", "C:\\src\\broken.mp3"]);
+    });
+
+    expect(screen.getByText("Добавлено: 1")).toBeInTheDocument();
+    expect(screen.getByText("Уже в библиотеке: 1")).toBeInTheDocument();
+    expect(screen.getByText("Ошибки: 1")).toBeInTheDocument();
+    expect(
+      screen.getByText("Папки пока не поддерживаются — перетащите файлы"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Поддерживаются только аудио и видеофайлы"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a rejection when another import is already running", async () => {
+    setup();
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+    startImport.mockRejectedValue(new Error("Импорт уже выполняется"));
+
+    await act(async () => {
+      await dropState.handler!(["C:\\src\\a.mp3"]);
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Не удалось добавить файлы: Импорт уже выполняется",
+    );
+  });
+
+  it("reports a cancelled import", async () => {
+    setup();
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+    startImport.mockResolvedValue({
+      ...emptyReport,
+      cancelled: true,
+      skipped: [{ path: "C:\\src\\b.mp3", reason: "cancelled" }],
+    });
+
+    await act(async () => {
+      await dropState.handler!(["C:\\src\\a.mp3", "C:\\src\\b.mp3"]);
+    });
+
+    expect(screen.getByText("Импорт отменён")).toBeInTheDocument();
+    expect(screen.getByText("Пропущено: 1")).toBeInTheDocument();
+  });
+
+  it("imports files chosen in the dialog", async () => {
+    const user = userEvent.setup();
+    setup();
+    openDialog.mockResolvedValue(["C:\\src\\chosen.mp3"]);
+    startImport.mockResolvedValue({ ...emptyReport, imported: [audio] });
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+
+    await user.click(screen.getByRole("button", { name: "Добавить файлы" }));
+
+    await waitFor(() =>
+      expect(startImport).toHaveBeenCalledWith(["C:\\src\\chosen.mp3"]),
+    );
+    expect(openDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ multiple: true }),
+    );
+  });
+
+  it("shows the drop overlay while dragging files", async () => {
+    dropState.dragging = true;
+    setup();
+    render(<LibraryScreen />);
+
+    expect(
+      await screen.findByText("Отпустите, чтобы добавить в библиотеку"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Аудио и видео копируются в библиотеку"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers import actions in the empty state", async () => {
+    setup([]);
+    render(<LibraryScreen />);
+
+    expect(
+      await screen.findByText("Аудио и видео копируются в библиотеку"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Добавить файлы" }),
+    ).toHaveLength(2);
   });
 });

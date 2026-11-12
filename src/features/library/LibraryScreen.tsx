@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   formatBytes,
@@ -10,6 +11,7 @@ import {
   queryLibrary,
   removeFromLibrary,
   scanLibrary,
+  type ImportReport,
   type LibraryItem,
   type LibraryPage,
   type MediaKind,
@@ -17,6 +19,10 @@ import {
 } from "../../api/library";
 import { formatDuration } from "../../api/tasks";
 import { useI18n } from "../../i18n";
+import DropOverlay from "./DropOverlay";
+import { useImport } from "./ImportProvider";
+import { MEDIA_EXTENSIONS } from "./mediaExtensions";
+import { useFileDrop } from "./useFileDrop";
 
 const SORTS: {
   value: SortKey;
@@ -109,9 +115,36 @@ export default function LibraryScreen({
     null,
   );
   const [tick, setTick] = useState(0);
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  const importer = useImport();
   const searchRef = useRef<HTMLInputElement>(null);
   const versionRef = useRef(0);
   const loadingMoreRef = useRef(false);
+
+  const importPaths = useCallback(
+    async (paths: string[]) => {
+      if (!importer) return;
+      setImportReport(null);
+      try {
+        const report = await importer.startImport(paths);
+        setImportReport(report);
+        setError(null);
+        setTick((value) => value + 1);
+      } catch (cause) {
+        setError(
+          t("library.importError", {
+            error: cause instanceof Error ? cause.message : String(cause),
+          }),
+        );
+      }
+    },
+    [importer, t],
+  );
+
+  // Keep drops enabled during an import: the provider rejects the second job
+  // and the screen shows "import already in progress" instead of silently
+  // ignoring the files.
+  const drop = useFileDrop({ onDrop: importPaths });
 
   const refresh = useCallback((full: boolean) => {
     setScanning(true);
@@ -257,6 +290,33 @@ export default function LibraryScreen({
     }
   }
 
+  async function addFiles() {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [
+          { name: t("library.mediaFilter"), extensions: MEDIA_EXTENSIONS },
+        ],
+      });
+      const paths = Array.isArray(selected)
+        ? selected
+        : selected
+          ? [selected]
+          : [];
+      if (paths.length > 0) await importPaths(paths);
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }
+
+  const skippedFolders =
+    importReport?.skipped.filter((skip) => skip.reason === "folder").length ?? 0;
+  const skippedUnsupported =
+    importReport?.skipped.filter((skip) => skip.reason === "unsupported")
+      .length ?? 0;
+  const skippedOther =
+    (importReport?.skipped.length ?? 0) - skippedFolders - skippedUnsupported;
+
   const empty = !loading && page.items.length === 0;
 
   return (
@@ -309,6 +369,20 @@ export default function LibraryScreen({
               ))}
             </select>
           </label>
+
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("library.addFiles")}
+            title={t("library.addFiles")}
+            onClick={addFiles}
+            disabled={importer?.importing}
+          >
+            <svg viewBox="0 0 24 24">
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
+          </button>
 
           <div className="view-toggle" role="group" aria-label={t("library.viewLabel")}>
             <button
@@ -363,6 +437,53 @@ export default function LibraryScreen({
         </p>
       )}
 
+      {importReport && (
+        <div className="import-summary" role="status">
+          {importReport.imported.length > 0 && (
+            <span>
+              {t("library.importDone", {
+                count: importReport.imported.length,
+              })}
+            </span>
+          )}
+          {importReport.existing.length > 0 && (
+            <span>
+              {t("library.importExisting", {
+                count: importReport.existing.length,
+              })}
+            </span>
+          )}
+          {skippedOther > 0 && (
+            <span>{t("library.importSkipped", { count: skippedOther })}</span>
+          )}
+          {importReport.failed.length > 0 && (
+            <span
+              className="import-failed"
+              title={importReport.failed[0]?.error}
+            >
+              {t("library.importFailed", {
+                count: importReport.failed.length,
+              })}
+            </span>
+          )}
+          {importReport.cancelled && (
+            <span>{t("library.importCancelled")}</span>
+          )}
+          {skippedFolders > 0 && <span>{t("library.importFolderHint")}</span>}
+          {skippedUnsupported > 0 && (
+            <span>{t("library.importUnsupported")}</span>
+          )}
+          <button
+            type="button"
+            className="import-dismiss"
+            aria-label={t("library.dismiss")}
+            onClick={() => setImportReport(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {empty && page.total === 0 && !search && !kind ? (
         <div className="lib-empty">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -370,6 +491,15 @@ export default function LibraryScreen({
             <path d="M8 4v16" />
           </svg>
           <p>{t("library.empty")}</p>
+          <p className="lib-empty-hint">{t("library.dropHint")}</p>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={addFiles}
+            disabled={importer?.importing}
+          >
+            {t("library.addFiles")}
+          </button>
         </div>
       ) : empty ? (
         <p className="queue-empty">{t("library.noResults")}</p>
@@ -490,6 +620,13 @@ export default function LibraryScreen({
             ? t("library.loadingMore")
             : t("library.filesCount", { count: page.total })}
       </footer>
+
+      {drop.dragging && (
+        <DropOverlay
+          title={t("library.dropActive")}
+          hint={t("library.dropHint")}
+        />
+      )}
     </div>
   );
 }

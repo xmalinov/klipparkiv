@@ -377,6 +377,113 @@ select.field.small {
   pointer-events: none;
 }
 
+.drop-overlay.global {
+  position: fixed;
+  inset: 12px;
+  z-index: 100;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 460px;
+  padding: var(--space-5);
+  text-align: center;
+}
+
+.drop-card svg {
+  width: 40px;
+  height: 40px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.drop-card strong {
+  font-size: 15px;
+}
+
+.drop-card span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.import-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.import-summary .import-failed {
+  color: var(--danger);
+}
+
+.import-dismiss {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.import-dismiss:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.import-chip {
+  position: fixed;
+  right: 16px;
+  bottom: 38px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 62vw;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+}
+
+.import-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34vw;
+}
+
+.import-chip .btn {
+  height: 26px;
+}
+
+.import-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .url-row {
   display: flex;
   align-items: center;
@@ -1258,6 +1365,14 @@ select.field.small {
   stroke: var(--text-dim);
   fill: none;
   stroke-width: 1.2;
+}
+
+.lib-empty-hint,
+.practice-empty-hint {
+  max-width: 420px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
 }
 
 .lib-footer {

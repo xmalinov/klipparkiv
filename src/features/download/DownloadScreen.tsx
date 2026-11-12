@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "../../api/library";
 import { getSettings } from "../../api/settings";
 import { useI18n, type Translate } from "../../i18n";
+import DropOverlay from "../library/DropOverlay";
+import { useFileDrop } from "../library/useFileDrop";
 import {
   applyProgress,
   cancelTask,
@@ -131,8 +134,6 @@ export default function DownloadScreen({ root }: { root?: string }) {
   const [playlistEnd, setPlaylistEnd] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [listText, setListText] = useState("");
-  const [dragging, setDragging] = useState(false);
-  const dragDepth = useRef(0);
   const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
   const [queue, setQueue] = useState<QueueState>({
     paused: false,
@@ -141,6 +142,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const drop = useFileDrop({ onDrop: handlePaths });
 
   useEffect(() => {
     let alive = true;
@@ -352,38 +354,23 @@ export default function DownloadScreen({ root }: { root?: string }) {
     }
   }
 
-  async function handleDrop(event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    dragDepth.current = 0;
-    setDragging(false);
-
-    const files = Array.from(event.dataTransfer.files);
-    if (files.length > 0) {
-      const supported = files.filter(
-        (file) =>
-          file.name.toLowerCase().endsWith(".txt") ||
-          file.type.startsWith("text/"),
-      );
-      if (supported.length === 0) {
-        setError(t("download.dropUnsupported"));
-        return;
-      }
-      try {
-        const parts = await Promise.all(supported.map((file) => file.text()));
-        const text = parts.join("\n").trim();
-        if (!text) {
-          setError(t("download.linksEmpty"));
-          return;
-        }
-        await submitList(text);
-      } catch (cause) {
-        setError(String(cause));
-      }
+  async function handlePaths(paths: string[]) {
+    const lists = paths.filter((path) => path.toLowerCase().endsWith(".txt"));
+    if (lists.length === 0) {
+      setError(t("download.dropUnsupported"));
       return;
     }
-
-    const text = event.dataTransfer.getData("text/plain");
-    if (text.trim()) await submitList(text);
+    try {
+      const parts = await Promise.all(lists.map((path) => readTextFile(path)));
+      const text = parts.join("\n").trim();
+      if (!text) {
+        setError(t("download.linksEmpty"));
+        return;
+      }
+      await submitList(text);
+    } catch (cause) {
+      setError(String(cause));
+    }
   }
 
   async function paste() {
@@ -438,29 +425,12 @@ export default function DownloadScreen({ root }: { root?: string }) {
       : 0;
 
   return (
-    <div
-      className={dragging ? "download dragging" : "download"}
-      onDragEnter={(event) => {
-        event.preventDefault();
-        dragDepth.current += 1;
-        setDragging(true);
-      }}
-      onDragOver={(event) => {
-        event.preventDefault();
-      }}
-      onDragLeave={() => {
-        dragDepth.current -= 1;
-        if (dragDepth.current <= 0) {
-          dragDepth.current = 0;
-          setDragging(false);
-        }
-      }}
-      onDrop={handleDrop}
-    >
-      {dragging && (
-        <div className="drop-overlay" aria-hidden="true">
-          <span>{t("download.dropActive")}</span>
-        </div>
+    <div className="download">
+      {drop.dragging && (
+        <DropOverlay
+          title={t("download.dropActive")}
+          hint={t("download.dropHint")}
+        />
       )}
 
       <div className="url-row">

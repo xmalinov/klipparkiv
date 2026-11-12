@@ -10,6 +10,35 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.7.1] — 2026-11-12
+
+Local media import release.
+
+#### Added
+
+- Drag audio and video files from Explorer/Finder into the library; they are
+  copied into `audio/` or `video/` and indexed immediately.
+- Drag into Practice to copy and open the first audio file paused; grid analysis
+  starts as usual and playback stays manual.
+- "Add files…" dialog in Library and Practice.
+- Import progress with Cancel and `Esc`, a per-file summary, and a hint when a
+  folder is dropped.
+- Title and artist from ID3 tags, embedded cover art for audio, poster frames
+  for imported videos.
+- Duplicate detection by size and SHA-256, conflict-safe `Name (2).ext` names.
+- An `origin` marker so a full rescan keeps imported titles, artists and covers.
+
+#### Changed
+
+- Drag and drop now uses Tauri's native handler, required to receive file paths;
+  the Download screen reads dropped `.txt` lists through the backend.
+- `ogg` is accepted as an audio extension.
+
+#### Notes
+
+- Dragging a URL as plain text into Download no longer works on Windows; use the
+  Paste button or `Ctrl+V`.
+
 ### [1.7.0] — 2026-11-11
 
 Practice player release with a local beat grid. Download and library behaviour is
@@ -230,6 +259,36 @@ First public release.
 - Portable layout: settings and index in `data\`, media in `audio\` and `video\`.
 
 ## Русский
+
+### [1.7.1] — 2026-11-12
+
+Релиз импорта локальных файлов.
+
+#### Добавлено
+
+- Перетаскивание аудио и видео из проводника/Finder в библиотеку: файлы
+  копируются в `audio/` или `video/` и сразу попадают в индекс.
+- Перетаскивание в практику: файл копируется и открывается на паузе; анализ
+  сетки запускается как обычно, воспроизведение остаётся ручным.
+- Кнопка «Добавить файлы…» в библиотеке и практике.
+- Прогресс импорта с отменой по кнопке и `Esc`, сводка по файлам, подсказка
+  при перетаскивании папки.
+- Название и исполнитель из тегов, встроенная обложка аудио, постер для
+  импортированного видео.
+- Поиск дубликатов по размеру и SHA-256, безопасные имена `Имя (2).ext`.
+- Признак `origin`, чтобы полный скан не сбрасывал импортированные названия,
+  исполнителей и обложки.
+
+#### Изменено
+
+- Drag and drop переведён на нативный обработчик Tauri (иначе недоступны пути
+  файлов); раздел «Загрузки» читает перетащенные `.txt` через бэкенд.
+- `ogg` добавлен как аудиоформат.
+
+#### Примечания
+
+- Перетаскивание URL текстом в «Загрузки» больше не работает на Windows:
+  используйте кнопку «Вставить» или `Ctrl+V`.
 
 ### [1.7.0] — 2026-11-11
 

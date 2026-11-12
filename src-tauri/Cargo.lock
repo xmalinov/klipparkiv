@@ -2246,7 +2246,7 @@ dependencies = [
 
 [[package]]
 name = "klipparkiv"
-version = "1.7.0"
+version = "1.7.1"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",

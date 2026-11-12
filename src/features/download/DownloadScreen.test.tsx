@@ -6,10 +6,19 @@ import DownloadScreen from "./DownloadScreen";
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
 const open = vi.hoisted(() => vi.fn());
+const dropState = vi.hoisted(() => ({
+  handler: null as null | ((paths: string[]) => unknown),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open }));
+vi.mock("../library/useFileDrop", () => ({
+  useFileDrop: ({ onDrop }: { onDrop: (paths: string[]) => unknown }) => {
+    dropState.handler = onDrop;
+    return { dragging: false };
+  },
+}));
 
 type Handler = (event: { payload: unknown }) => void;
 const handlers: Record<string, Handler> = {};
@@ -690,45 +699,34 @@ describe("DownloadScreen", () => {
     );
   });
 
-  it("accepts dropped links", async () => {
-    const { container } = render(<DownloadScreen />);
-    invoke.mockResolvedValue([task]);
-
-    const dropZone = container.querySelector(".download");
-    expect(dropZone).not.toBeNull();
-    fireEvent.drop(dropZone!, {
-      dataTransfer: {
-        files: [],
-        getData: () => "https://youtu.be/a\nhttps://youtu.be/b",
-      },
+  it("reads dropped .txt link lists through the backend", async () => {
+    render(<DownloadScreen />);
+    invoke.mockImplementation((command: string) => {
+      if (command === "read_text_file")
+        return Promise.resolve("https://youtu.be/a");
+      return Promise.resolve([task]);
     });
 
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("enqueue_links", {
-        request: expect.objectContaining({
-          text: "https://youtu.be/a\nhttps://youtu.be/b",
-        }),
-      }),
-    );
-  });
+    await dropState.handler!(["C:\\tmp\\links.txt"]);
 
-  it("reads dropped .txt link lists", async () => {
-    const { container } = render(<DownloadScreen />);
-    invoke.mockResolvedValue([task]);
-
-    const dropZone = container.querySelector(".download");
-    expect(dropZone).not.toBeNull();
-    const file = new File(["https://youtu.be/a"], "links.txt", {
-      type: "text/plain",
+    expect(invoke).toHaveBeenCalledWith("read_text_file", {
+      path: "C:\\tmp\\links.txt",
     });
-    fireEvent.drop(dropZone!, {
-      dataTransfer: { files: [file], getData: () => "" },
-    });
-
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("enqueue_links", {
         request: expect.objectContaining({ text: "https://youtu.be/a" }),
       }),
     );
+  });
+
+  it("rejects dropped media files without reading them", async () => {
+    render(<DownloadScreen />);
+
+    await dropState.handler!(["C:\\tmp\\song.mp3"]);
+
+    expect(
+      await screen.findByText("Можно перетащить только ссылки или .txt"),
+    ).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalledWith("read_text_file", expect.anything());
   });
 });

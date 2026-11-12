@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { formatVersion, loadAppInfo, type AppInfo } from "./api/appInfo";
 import { applyTheme, getSettings } from "./api/settings";
 import DownloadScreen from "./features/download/DownloadScreen";
+import { ImportProvider } from "./features/library/ImportProvider";
+import ImportStatus from "./features/library/ImportStatus";
 import LibraryScreen from "./features/library/LibraryScreen";
 import MiniPlayer from "./features/practice/MiniPlayer";
 import PracticeScreen from "./features/practice/PracticeScreen";
@@ -62,7 +64,9 @@ function environmentWarnings(info: AppInfo, t: Translate): string[] {
 export default function App() {
   return (
     <PracticeProvider>
-      <AppShell />
+      <ImportProvider>
+        <AppShell />
+      </ImportProvider>
     </PracticeProvider>
   );
 }
@@ -74,6 +78,16 @@ function AppShell() {
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>("download");
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    const prevent = (event: DragEvent) => event.preventDefault();
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -193,6 +207,8 @@ function AppShell() {
         {track && screen !== "practice" && (
           <MiniPlayer onOpen={() => setScreen("practice")} />
         )}
+
+        <ImportStatus />
 
         <footer className="statusbar">
           <span className="root" title={info?.root}>

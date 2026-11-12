@@ -139,6 +139,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(paths)
         .manage(library)
+        .manage(library::ImportState::default())
         .manage(settings_store)
         .manage(tasks)
         .manage(practice)
@@ -150,8 +151,10 @@ pub fn run() {
 
             let paths = app.state::<AppPaths>().inner().clone();
             let cleanup_paths = paths.clone();
+            let sweep_paths = paths.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 updater::cleanup_stale_state(&cleanup_paths);
+                library::sweep_part_files(&sweep_paths);
             });
             #[cfg(target_os = "macos")]
             tauri::async_runtime::spawn_blocking(move || {
@@ -233,6 +236,9 @@ pub fn run() {
             library::library_scan,
             library::library_open,
             library::library_remove,
+            library::library_import,
+            library::library_import_cancel,
+            library::read_text_file,
             library::library_thumb,
             practice::practice_open,
             practice::practice_play,
