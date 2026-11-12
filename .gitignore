@@ -18,6 +18,7 @@ dist
 dist-ssr
 *.local
 coverage
+/src-tauri/lcov.info
 
 # portable bundle and runtime state (not tracked)
 /bin/

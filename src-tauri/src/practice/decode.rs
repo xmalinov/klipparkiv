@@ -342,4 +342,32 @@ mod tests {
         assert!(args.contains(&"44100".to_string()));
         assert!(args.contains(&"1".to_string()));
     }
+
+    #[test]
+    fn decode_region_rejects_empty_ranges() {
+        let ffmpeg = Path::new("ffmpeg");
+        let path = Path::new("song.mp3");
+        assert_eq!(
+            decode_region(ffmpeg, path, 5.0, 5.0, 48_000, 2).unwrap_err(),
+            "loop region is empty"
+        );
+        assert_eq!(
+            decode_region(ffmpeg, path, 5.0, 4.0, 48_000, 2).unwrap_err(),
+            "loop region is empty"
+        );
+    }
+
+    #[test]
+    fn decode_region_reports_a_missing_ffmpeg() {
+        let error = decode_region(
+            Path::new("definitely-missing-ffmpeg"),
+            Path::new("song.mp3"),
+            0.0,
+            1.0,
+            48_000,
+            2,
+        )
+        .unwrap_err();
+        assert!(error.contains("cannot decode loop region"));
+    }
 }

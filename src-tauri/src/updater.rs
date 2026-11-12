@@ -8,7 +8,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use url::Url;
 
 use crate::commands::TaskStore;
@@ -568,6 +568,86 @@ fn verify_file(path: &Path, signature: &str, version: &str) -> Result<(), String
     }
 }
 
+#[derive(Debug)]
+enum ReceiveError {
+    Read(String),
+    Write(String),
+    TooLarge,
+    SizeMismatch { received: u64, expected: u64 },
+    ChecksumMismatch,
+}
+
+trait ChunkSource {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String>;
+}
+
+struct ResponseChunks<'a>(&'a mut reqwest::Response);
+
+impl ChunkSource for ResponseChunks<'_> {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+        match self.0.chunk().await {
+            Ok(Some(chunk)) => Ok(Some(chunk.to_vec())),
+            Ok(None) => Ok(None),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+}
+
+/// Streams the asset into `writer`, hashing and validating it on the fly.
+///
+/// Kept independent from HTTP and the UI so the chunking, size, checksum and
+/// error paths can be tested without a server or a Tauri app handle.
+async fn receive_update<S, W>(
+    source: &mut S,
+    writer: &mut W,
+    expected_size: u64,
+    expected_sha256: &str,
+    max_size: u64,
+    mut on_chunk: impl FnMut(u64, f32),
+) -> Result<(), ReceiveError>
+where
+    S: ChunkSource,
+    W: AsyncWrite + Unpin,
+{
+    let mut hasher = Sha256::new();
+    let mut received = 0u64;
+
+    loop {
+        let chunk = match source.next_chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(message) => return Err(ReceiveError::Read(message)),
+        };
+        writer
+            .write_all(&chunk)
+            .await
+            .map_err(|error| ReceiveError::Write(error.to_string()))?;
+        hasher.update(&chunk);
+        received += chunk.len() as u64;
+        if received > max_size {
+            return Err(ReceiveError::TooLarge);
+        }
+        let percent = if expected_size > 0 {
+            (received as f32 / expected_size as f32 * 100.0).min(100.0)
+        } else {
+            100.0
+        };
+        on_chunk(received, percent);
+    }
+
+    if received != expected_size {
+        return Err(ReceiveError::SizeMismatch {
+            received,
+            expected: expected_size,
+        });
+    }
+    let digest = hex::encode(hasher.finalize());
+    if !digest.eq_ignore_ascii_case(expected_sha256) {
+        return Err(ReceiveError::ChecksumMismatch);
+    }
+    Ok(())
+}
+
 pub async fn download(app: &AppHandle) -> UpdateStatus {
     let status = app.state::<UpdateStore>().status();
     if matches!(
@@ -688,57 +768,54 @@ pub async fn download(app: &AppHandle) -> UpdateStatus {
             );
         }
     };
-    let mut hasher = Sha256::new();
-    let mut downloaded = 0u64;
     let mut last_emit = Instant::now();
-
-    loop {
-        let chunk = match response.chunk().await {
-            Ok(Some(chunk)) => chunk,
-            Ok(None) => break,
-            Err(error) => {
-                let _ = tokio::fs::remove_file(&part_path).await;
-                return error_status(
+    let mut source = ResponseChunks(&mut response);
+    let received = receive_update(
+        &mut source,
+        &mut file,
+        asset.size,
+        &asset.sha256,
+        MAX_UPDATE_BYTES,
+        |downloaded, percent| {
+            if last_emit.elapsed() >= Duration::from_millis(100) {
+                set_status(
                     app,
-                    i18n::tf(
-                        || format!("не удалось скачать обновление: {error}"),
-                        || format!("could not download the update: {error}"),
-                    ),
+                    app.state::<UpdateStore>().update_status(|status| {
+                        status.downloaded = downloaded;
+                        status.percent = percent;
+                    }),
                 );
+                last_emit = Instant::now();
             }
+        },
+    )
+    .await;
+
+    if let Err(error) = received {
+        let _ = tokio::fs::remove_file(&part_path).await;
+        let message = match error {
+            ReceiveError::Read(message) => i18n::tf(
+                || format!("не удалось скачать обновление: {message}"),
+                || format!("could not download the update: {message}"),
+            ),
+            ReceiveError::Write(message) => i18n::tf(
+                || format!("не удалось записать обновление: {message}"),
+                || format!("could not write the update: {message}"),
+            ),
+            ReceiveError::TooLarge => i18n::t(
+                "обновление больше допустимого размера",
+                "the update is larger than allowed",
+            ),
+            ReceiveError::SizeMismatch { received, expected } => i18n::tf(
+                || format!("скачано {received} байт вместо {expected}"),
+                || format!("downloaded {received} bytes instead of {expected}"),
+            ),
+            ReceiveError::ChecksumMismatch => i18n::t(
+                "контрольная сумма обновления не совпала",
+                "the update checksum does not match",
+            ),
         };
-        if let Err(error) = file.write_all(&chunk).await {
-            let _ = tokio::fs::remove_file(&part_path).await;
-            return error_status(
-                app,
-                i18n::tf(
-                    || format!("не удалось записать обновление: {error}"),
-                    || format!("could not write the update: {error}"),
-                ),
-            );
-        }
-        hasher.update(&chunk);
-        downloaded += chunk.len() as u64;
-        if downloaded > MAX_UPDATE_BYTES {
-            let _ = tokio::fs::remove_file(&part_path).await;
-            return error_status(
-                app,
-                i18n::t(
-                    "обновление больше допустимого размера",
-                    "the update is larger than allowed",
-                ),
-            );
-        }
-        if last_emit.elapsed() >= Duration::from_millis(100) {
-            set_status(
-                app,
-                app.state::<UpdateStore>().update_status(|status| {
-                    status.downloaded = downloaded;
-                    status.percent = (downloaded as f32 / asset.size as f32 * 100.0).min(100.0);
-                }),
-            );
-            last_emit = Instant::now();
-        }
+        return error_status(app, message);
     }
 
     if let Err(error) = file.flush().await {
@@ -753,29 +830,6 @@ pub async fn download(app: &AppHandle) -> UpdateStatus {
     }
     let _ = file.sync_all().await;
     drop(file);
-
-    if downloaded != asset.size {
-        let _ = tokio::fs::remove_file(&part_path).await;
-        return error_status(
-            app,
-            i18n::tf(
-                || format!("скачано {downloaded} байт вместо {}", asset.size),
-                || format!("downloaded {downloaded} bytes instead of {}", asset.size),
-            ),
-        );
-    }
-
-    let digest = hex::encode(hasher.finalize());
-    if digest != asset.sha256 {
-        let _ = tokio::fs::remove_file(&part_path).await;
-        return error_status(
-            app,
-            i18n::t(
-                "контрольная сумма обновления не совпала",
-                "the update checksum does not match",
-            ),
-        );
-    }
 
     let verify_path = part_path.clone();
     let verify_signature = asset.signature.clone();
@@ -1138,7 +1192,7 @@ fn can_write_next_to(bundle: &Path) -> bool {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn extract_app_tarball(archive: &Path, dest: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
 
@@ -1760,7 +1814,14 @@ pub fn schedule_startup_check(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::AsyncWrite;
+
     use super::*;
+    use serde_json::json;
 
     const MANIFEST: &str = r#"{
         "schema": 1,
@@ -1974,6 +2035,587 @@ mod tests {
             std::env::var("UPDATE_VERIFY_VERSION").expect("UPDATE_VERIFY_VERSION is required");
         let signature = std::fs::read_to_string(signature_path).unwrap();
         verify_file(&file, &signature, &version).unwrap();
+    }
+
+    fn base_asset() -> serde_json::Value {
+        json!({
+            "kind": update_kind(),
+            "url": "https://example.com/download/app",
+            "size": 100,
+            "sha256": "a".repeat(64),
+            "signature": "signature"
+        })
+    }
+
+    fn manifest_with(asset: serde_json::Value) -> serde_json::Value {
+        let mut platforms = serde_json::Map::new();
+        platforms.insert(update_target().to_string(), asset);
+        json!({
+            "schema": 1,
+            "version": "99.0.0",
+            "platforms": platforms
+        })
+    }
+
+    fn parse_asset(asset: serde_json::Value) -> Result<Option<StagedAsset>, String> {
+        parse_manifest(&manifest_with(asset).to_string())
+    }
+
+    #[test]
+    fn the_base_manifest_is_accepted() {
+        let asset = parse_asset(base_asset()).unwrap().unwrap();
+        assert_eq!(asset.version, "99.0.0");
+        assert_eq!(asset.url.scheme(), "https");
+    }
+
+    #[test]
+    fn rejects_an_unsupported_manifest_schema() {
+        let mut manifest = manifest_with(base_asset());
+        manifest["schema"] = json!(2);
+        assert!(parse_manifest(&manifest.to_string()).is_err());
+    }
+
+    #[test]
+    fn rejects_malformed_manifest_json() {
+        assert!(parse_manifest("{").is_err());
+        assert!(parse_manifest("null").is_err());
+    }
+
+    #[test]
+    fn rejects_an_invalid_remote_version() {
+        let mut manifest = manifest_with(base_asset());
+        manifest["version"] = json!("not-a-version");
+        assert!(parse_manifest(&manifest.to_string()).is_err());
+    }
+
+    #[test]
+    fn ignores_the_current_version() {
+        let mut manifest = manifest_with(base_asset());
+        manifest["version"] = json!(current_version());
+        assert!(parse_manifest(&manifest.to_string()).unwrap().is_none());
+    }
+
+    #[test]
+    fn requires_a_build_for_this_platform() {
+        let mut manifest = manifest_with(base_asset());
+        manifest["platforms"] = json!({ "linux-x86_64": base_asset() });
+        let error = parse_manifest(&manifest.to_string()).unwrap_err();
+        assert!(error.contains(update_target()));
+    }
+
+    #[test]
+    fn enforces_the_manifest_minimum_version() {
+        let mut manifest = manifest_with(base_asset());
+        manifest["minVersion"] = json!("99.0.0");
+        let error = parse_manifest(&manifest.to_string()).unwrap_err();
+        assert!(error.contains("99.0.0"));
+    }
+
+    #[test]
+    fn the_asset_minimum_version_overrides_the_manifest_one() {
+        let mut manifest = manifest_with(base_asset());
+        manifest["minVersion"] = json!("0.0.1");
+        manifest["platforms"][update_target()]["minVersion"] = json!("99.0.0");
+        let error = parse_manifest(&manifest.to_string()).unwrap_err();
+        assert!(error.contains("99.0.0"));
+    }
+
+    #[test]
+    fn rejects_an_invalid_minimum_version() {
+        let mut manifest = manifest_with(base_asset());
+        manifest["minVersion"] = json!("soon");
+        assert!(parse_manifest(&manifest.to_string()).is_err());
+    }
+
+    #[test]
+    fn rejects_a_foreign_update_kind() {
+        let mut asset = base_asset();
+        asset["kind"] = json!("zip");
+        assert!(parse_asset(asset).is_err());
+    }
+
+    #[test]
+    fn rejects_impossible_asset_sizes() {
+        let mut empty = base_asset();
+        empty["size"] = json!(0);
+        assert!(parse_asset(empty).is_err());
+
+        let mut huge = base_asset();
+        huge["size"] = json!(MAX_UPDATE_BYTES + 1);
+        assert!(parse_asset(huge).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_checksums() {
+        let mut short = base_asset();
+        short["sha256"] = json!("abc");
+        assert!(parse_asset(short).is_err());
+
+        let mut non_hex = base_asset();
+        non_hex["sha256"] = json!("z".repeat(64));
+        assert!(parse_asset(non_hex).is_err());
+    }
+
+    #[test]
+    fn rejects_an_unsigned_update() {
+        let mut asset = base_asset();
+        asset["signature"] = json!("   ");
+        assert!(parse_asset(asset).is_err());
+    }
+
+    #[test]
+    fn normalises_the_checksum_and_truncates_notes() {
+        let mut asset = base_asset();
+        asset["sha256"] = json!("A".repeat(64));
+        asset["signature"] = json!("  signature  ");
+
+        let mut manifest = manifest_with(asset);
+        manifest["notes"] = json!("x".repeat(9_000));
+
+        let parsed = parse_manifest(&manifest.to_string()).unwrap().unwrap();
+        assert_eq!(parsed.sha256, "a".repeat(64));
+        assert_eq!(parsed.notes.as_deref().map(str::len), Some(8_000));
+        assert_eq!(parsed.signature, "  signature  ");
+    }
+
+    #[test]
+    fn parses_a_manual_dmg_asset_on_any_platform() {
+        let mut asset = base_asset();
+        asset["manual"] = json!({
+            "kind": "dmg",
+            "url": "https://example.com/download/app.dmg",
+            "size": 100,
+            "sha256": "B".repeat(64),
+            "signature": "dmg-signature"
+        });
+
+        let parsed = parse_asset(asset).unwrap().unwrap();
+        let manual = parsed.manual.expect("manual asset");
+        assert_eq!(manual.sha256, "b".repeat(64));
+        assert_eq!(manual.url.scheme(), "https");
+    }
+
+    #[test]
+    fn validates_the_manual_dmg_asset() {
+        let manual = |kind: &str, size: u64, sha: String, signature: &str| {
+            json!({
+                "kind": kind,
+                "url": "https://example.com/download/app.dmg",
+                "size": size,
+                "sha256": sha,
+                "signature": signature
+            })
+        };
+
+        let mut wrong_kind = base_asset();
+        wrong_kind["manual"] = manual("zip", 100, "b".repeat(64), "sig");
+        assert!(parse_asset(wrong_kind).is_err());
+
+        let mut empty = base_asset();
+        empty["manual"] = manual("dmg", 0, "b".repeat(64), "sig");
+        assert!(parse_asset(empty).is_err());
+
+        let mut bad_sha = base_asset();
+        bad_sha["manual"] = manual("dmg", 100, "abc".into(), "sig");
+        assert!(parse_asset(bad_sha).is_err());
+
+        let mut unsigned = base_asset();
+        unsigned["manual"] = manual("dmg", 100, "b".repeat(64), "  ");
+        assert!(parse_asset(unsigned).is_err());
+    }
+
+    #[test]
+    fn validates_update_urls() {
+        assert!(validate_update_url("https://example.com/update.json").is_ok());
+        assert!(validate_update_url("not a url").is_err());
+        assert!(validate_update_url("ftp://example.com/update.json").is_err());
+        assert!(validate_update_url("file:///etc/passwd").is_err());
+        if cfg!(debug_assertions) {
+            assert!(validate_update_url("http://example.com/update.json").is_ok());
+        } else {
+            assert!(validate_update_url("http://example.com/update.json").is_err());
+        }
+    }
+
+    #[test]
+    fn default_status_reports_the_running_version() {
+        let status = UpdateStatus::default();
+        assert_eq!(status.state, STATE_IDLE);
+        assert_eq!(status.current_version, current_version());
+        assert_eq!(status.downloaded, 0);
+        assert_eq!(status.percent, 0.0);
+        assert!(status.version.is_none());
+    }
+
+    #[test]
+    fn the_store_keeps_status_and_the_staged_asset() {
+        let store = UpdateStore::default();
+        assert!(store.asset().is_none());
+
+        let updated = store.update_status(|status| {
+            status.state = STATE_READY.into();
+            status.percent = 42.0;
+        });
+        assert_eq!(updated.state, STATE_READY);
+        assert_eq!(store.status().percent, 42.0);
+
+        let asset = parse_asset(base_asset()).unwrap().unwrap();
+        store.set_asset(Some(asset));
+        assert_eq!(store.asset().unwrap().version, "99.0.0");
+
+        store.set_asset(None);
+        assert!(store.asset().is_none());
+    }
+
+    #[test]
+    fn the_staged_path_is_scoped_to_the_version() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::portable(temp.path());
+        let path = staged_path(&paths, "1.2.3");
+        assert!(path.ends_with(Path::new("1.2.3").join(staged_file_name())));
+    }
+
+    #[test]
+    fn the_embedded_public_key_is_valid() {
+        assert!(is_configured());
+    }
+
+    #[test]
+    fn a_bad_signature_encoding_is_reported() {
+        assert!(decode_signature("not a minisign signature").is_err());
+
+        use base64::Engine;
+        let invalid_utf8 = base64::engine::general_purpose::STANDARD.encode([0xff, 0xfe]);
+        let error = match decode_signature(&invalid_utf8) {
+            Ok(_) => panic!("invalid UTF-8 must be rejected"),
+            Err(error) => error,
+        };
+        assert!(!error.is_empty());
+    }
+
+    #[test]
+    fn verify_file_accepts_the_fixture_and_rejects_mismatches() {
+        let data = include_bytes!("../tests/fixtures/update-1.2.3.txt");
+        let signature = include_str!("../tests/fixtures/update-1.2.3.txt.sig");
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("update.bin");
+        std::fs::write(&file, data).unwrap();
+
+        verify_file(&file, signature, "1.2.3").unwrap();
+        assert!(verify_file(&file, signature, "2.0.0").is_err());
+
+        std::fs::write(&file, b"tampered").unwrap();
+        assert!(verify_file(&file, signature, "1.2.3").is_err());
+
+        assert!(verify_file(Path::new("missing-update.bin"), signature, "1.2.3").is_err());
+    }
+
+    fn write_tarball(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(path).expect("tarball");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        for (name, data) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, name, *data)
+                .expect("tar entry");
+        }
+        builder.finish().expect("tar finish");
+    }
+
+    #[test]
+    fn extracts_a_valid_app_tarball() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("update.tar.gz");
+        let dest = temp.path().join("extracted");
+        write_tarball(
+            &archive,
+            &[
+                ("Klipparkiv.app/Contents/Info.plist", b"plist"),
+                ("Klipparkiv.app/Contents/MacOS/klipparkiv", b"binary"),
+            ],
+        );
+
+        let bundle = extract_app_tarball(&archive, &dest).unwrap();
+
+        assert_eq!(bundle, dest.join("Klipparkiv.app"));
+        assert!(bundle.is_dir());
+        assert_eq!(
+            std::fs::read_to_string(bundle.join("Contents").join("Info.plist")).unwrap(),
+            "plist"
+        );
+    }
+
+    #[test]
+    fn extraction_clears_the_previous_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("update.tar.gz");
+        let dest = temp.path().join("extracted");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("stale.txt"), b"stale").unwrap();
+        write_tarball(&archive, &[("Klipparkiv.app/Contents/Info.plist", b"new")]);
+
+        extract_app_tarball(&archive, &dest).unwrap();
+
+        assert!(!dest.join("stale.txt").exists());
+    }
+
+    #[test]
+    fn rejects_a_tarball_with_another_app() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("update.tar.gz");
+        let dest = temp.path().join("extracted");
+        write_tarball(&archive, &[("Other.app/Contents/Info.plist", b"plist")]);
+
+        assert!(extract_app_tarball(&archive, &dest).is_err());
+    }
+
+    #[test]
+    fn rejects_a_tarball_with_multiple_apps() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("update.tar.gz");
+        let dest = temp.path().join("extracted");
+        write_tarball(
+            &archive,
+            &[
+                ("Klipparkiv.app/Contents/Info.plist", b"plist"),
+                ("Other.app/Contents/Info.plist", b"plist"),
+            ],
+        );
+
+        assert!(extract_app_tarball(&archive, &dest).is_err());
+    }
+
+    #[test]
+    fn rejects_an_empty_or_corrupt_tarball() {
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("extracted");
+
+        let empty = temp.path().join("empty.tar.gz");
+        write_tarball(&empty, &[]);
+        assert!(extract_app_tarball(&empty, &dest).is_err());
+
+        let corrupt = temp.path().join("corrupt.tar.gz");
+        std::fs::write(&corrupt, b"definitely not gzip").unwrap();
+        assert!(extract_app_tarball(&corrupt, &dest).is_err());
+
+        assert!(extract_app_tarball(&temp.path().join("missing.tar.gz"), &dest).is_err());
+    }
+
+    #[test]
+    fn rejects_a_bundle_entry_that_is_not_a_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("update.tar.gz");
+        let dest = temp.path().join("extracted");
+        write_tarball(&archive, &[("Klipparkiv.app", b"not a folder")]);
+
+        assert!(extract_app_tarball(&archive, &dest).is_err());
+    }
+
+    struct ScriptedChunks(VecDeque<Result<Option<Vec<u8>>, String>>);
+
+    impl ChunkSource for ScriptedChunks {
+        async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+            self.0.pop_front().unwrap_or(Ok(None))
+        }
+    }
+
+    struct FailingWriter;
+
+    impl AsyncWrite for FailingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            _buffer: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Err(std::io::Error::other("disk full")))
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn sha256(data: &[u8]) -> String {
+        hex::encode(Sha256::digest(data))
+    }
+
+    async fn stream(
+        chunks: Vec<Result<Option<Vec<u8>>, String>>,
+        size: u64,
+        sha: &str,
+        max: u64,
+    ) -> (Result<(), ReceiveError>, Vec<(u64, f32)>) {
+        let mut source = ScriptedChunks(chunks.into());
+        let mut writer = tokio::io::sink();
+        let mut progress = Vec::new();
+        let result = receive_update(
+            &mut source,
+            &mut writer,
+            size,
+            sha,
+            max,
+            |received, percent| progress.push((received, percent)),
+        )
+        .await;
+        (result, progress)
+    }
+
+    #[tokio::test]
+    async fn receives_chunks_in_order_and_reports_progress() {
+        let data = b"abcdef";
+        let chunks = vec![Ok(Some(b"abc".to_vec())), Ok(Some(b"def".to_vec()))];
+
+        let (result, progress) = stream(chunks, data.len() as u64, &sha256(data), 1_000).await;
+
+        assert!(result.is_ok());
+        assert_eq!(progress, vec![(3, 50.0), (6, 100.0)]);
+    }
+
+    #[tokio::test]
+    async fn rejects_a_short_download() {
+        let chunks = vec![Ok(Some(b"abc".to_vec()))];
+
+        let (result, _) = stream(chunks, 10, &sha256(b"abc"), 1_000).await;
+
+        assert!(matches!(
+            result,
+            Err(ReceiveError::SizeMismatch {
+                received: 3,
+                expected: 10
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_checksum_mismatch() {
+        let chunks = vec![Ok(Some(b"abc".to_vec()))];
+
+        let (result, _) = stream(chunks, 3, &"0".repeat(64), 1_000).await;
+
+        assert!(matches!(result, Err(ReceiveError::ChecksumMismatch)));
+    }
+
+    #[tokio::test]
+    async fn rejects_an_oversized_download() {
+        let chunks = vec![Ok(Some(b"abcd".to_vec()))];
+
+        let (result, _) = stream(chunks, 4, &sha256(b"abcd"), 2).await;
+
+        assert!(matches!(result, Err(ReceiveError::TooLarge)));
+    }
+
+    #[tokio::test]
+    async fn reports_read_errors() {
+        let chunks = vec![Err("connection reset".to_string())];
+
+        let (result, _) = stream(chunks, 3, &sha256(b"abc"), 1_000).await;
+
+        assert!(matches!(
+            result,
+            Err(ReceiveError::Read(message)) if message == "connection reset"
+        ));
+    }
+
+    #[tokio::test]
+    async fn reports_write_errors() {
+        let mut source = ScriptedChunks(VecDeque::from(vec![Ok(Some(b"abc".to_vec()))]));
+        let mut writer = FailingWriter;
+
+        let result = receive_update(
+            &mut source,
+            &mut writer,
+            3,
+            &sha256(b"abc"),
+            1_000,
+            |_, _| {},
+        )
+        .await;
+
+        assert!(matches!(result, Err(ReceiveError::Write(_))));
+    }
+
+    #[tokio::test]
+    async fn caps_progress_at_one_hundred_percent() {
+        let chunks = vec![Ok(Some(b"abcd".to_vec()))];
+
+        let (result, progress) = stream(chunks, 2, &sha256(b"abcd"), 1_000).await;
+
+        assert_eq!(progress, vec![(4, 100.0)]);
+        assert!(matches!(result, Err(ReceiveError::SizeMismatch { .. })));
+    }
+
+    #[tokio::test]
+    async fn accepts_an_empty_payload() {
+        let (result, progress) = stream(Vec::new(), 0, &sha256(b""), 1_000).await;
+
+        assert!(result.is_ok());
+        assert!(progress.is_empty());
+    }
+
+    #[test]
+    fn cleanup_keeps_only_the_newest_backup() {
+        fn set_age(path: &Path, age: Duration) {
+            let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+            let times = std::fs::FileTimes::new().set_modified(SystemTime::now() - age);
+            file.set_times(times).unwrap();
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::portable(temp.path());
+        std::fs::create_dir_all(paths.update_backups()).unwrap();
+
+        let oldest = paths.update_backups().join("oldest.exe");
+        let middle = paths.update_backups().join("middle.exe");
+        let newest = paths.update_backups().join("newest.exe");
+        for path in [&oldest, &middle, &newest] {
+            std::fs::write(path, b"backup").unwrap();
+        }
+        set_age(&oldest, Duration::from_secs(30 * 24 * 60 * 60));
+        set_age(&middle, Duration::from_secs(20 * 24 * 60 * 60));
+        set_age(&newest, Duration::from_secs(60));
+
+        cleanup_stale_state(&paths);
+
+        assert!(!oldest.exists());
+        assert!(!middle.exists());
+        assert!(newest.exists());
+    }
+
+    #[test]
+    fn cleanup_keeps_a_small_updater_log() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::portable(temp.path());
+        std::fs::create_dir_all(paths.update()).unwrap();
+        let log = paths.updater_log();
+        std::fs::write(&log, b"small log").unwrap();
+
+        cleanup_stale_state(&paths);
+
+        assert!(log.exists());
+        assert!(!log.with_extension("log.old").exists());
+    }
+
+    #[test]
+    fn cleanup_is_safe_without_update_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::portable(temp.path());
+
+        cleanup_stale_state(&paths);
+        cleanup_stale_state(&paths);
     }
 }
 

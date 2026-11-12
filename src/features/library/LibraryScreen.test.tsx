@@ -73,9 +73,13 @@ const video: LibraryItem = {
   thumbPath: null,
 };
 
-function setup(items: LibraryItem[] = [audio, video]) {
+function setup(
+  items: LibraryItem[] = [audio, video],
+  overrides: Record<string, (args: Record<string, unknown>) => unknown> = {},
+) {
   const page: LibraryPage = { items, total: items.length };
-  invoke.mockImplementation((command: string) => {
+  invoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+    if (overrides[command]) return Promise.resolve(overrides[command](args));
     if (command === "library_scan")
       return Promise.resolve({ scanned: items.length, added: 0, updated: 0, removed: 0 });
     if (command === "library_query") return Promise.resolve(page);
@@ -350,5 +354,172 @@ describe("LibraryScreen", () => {
     expect(
       screen.getAllByRole("button", { name: "Добавить файлы" }),
     ).toHaveLength(2);
+  });
+
+  it("reveals and removes an item from the context menu", async () => {
+    const user = userEvent.setup();
+    setup();
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+
+    fireEvent.contextMenu(screen.getByText("abc - Song"), {
+      clientX: 10,
+      clientY: 20,
+    });
+    await user.click(screen.getByRole("menuitem", { name: "Показать в папке" }));
+    expect(revealItemInDir).toHaveBeenCalledWith(audio.path);
+
+    fireEvent.contextMenu(screen.getByText("abc - Song"), {
+      clientX: 10,
+      clientY: 20,
+    });
+    await user.click(
+      screen.getByRole("menuitem", { name: "Убрать из библиотеки" }),
+    );
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("library_remove", { id: audio.id }),
+    );
+    await waitFor(() => expect(screen.queryByText("abc - Song")).toBeNull());
+  });
+
+  it("plays audio from the menu and offers practice only for audio", async () => {
+    const user = userEvent.setup();
+    const onPractice = vi.fn();
+    setup();
+    render(<LibraryScreen onPractice={onPractice} />);
+    await screen.findByText("abc - Song");
+
+    fireEvent.contextMenu(screen.getByText("abc - Song"), {
+      clientX: 10,
+      clientY: 20,
+    });
+    await user.click(
+      screen.getByRole("menuitem", { name: "Открыть в практике" }),
+    );
+    expect(onPractice).toHaveBeenCalledWith(audio);
+
+    fireEvent.contextMenu(screen.getByText("v1 - Clip"), {
+      clientX: 10,
+      clientY: 20,
+    });
+    expect(
+      screen.queryByRole("menuitem", { name: "Открыть в практике" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("menuitem", { name: "Воспроизвести" }));
+    expect(invoke).toHaveBeenCalledWith("library_open", { path: video.path });
+  });
+
+  it("closes the context menu on Escape in the list view", async () => {
+    const user = userEvent.setup();
+    setup();
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+    await user.click(screen.getByRole("button", { name: "Список" }));
+
+    fireEvent.contextMenu(screen.getByText("abc - Song"), {
+      clientX: 10,
+      clientY: 20,
+    });
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("reports a failed open and a failed reveal", async () => {
+    const user = userEvent.setup();
+    setup([audio, video], {
+      library_open: () => Promise.reject("boom"),
+    });
+    revealItemInDir.mockRejectedValue(new Error("no explorer"));
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+
+    fireEvent.doubleClick(screen.getByText("abc - Song"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Не удалось открыть файл: boom",
+      ),
+    );
+
+    fireEvent.contextMenu(screen.getByText("abc - Song"), {
+      clientX: 10,
+      clientY: 20,
+    });
+    await user.click(screen.getByRole("menuitem", { name: "Показать в папке" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("no explorer"),
+    );
+  });
+
+  it("keeps the item when removing it fails", async () => {
+    const user = userEvent.setup();
+    setup([audio, video], {
+      library_remove: () => Promise.reject("db locked"),
+    });
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+
+    fireEvent.contextMenu(screen.getByText("abc - Song"), {
+      clientX: 10,
+      clientY: 20,
+    });
+    await user.click(
+      screen.getByRole("menuitem", { name: "Убрать из библиотеки" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("db locked"),
+    );
+    expect(screen.getByText("abc - Song")).toBeInTheDocument();
+  });
+
+  it("activates audio from the keyboard and video in the system player", async () => {
+    const onPractice = vi.fn();
+    setup();
+    render(<LibraryScreen onPractice={onPractice} />);
+    await screen.findByText("abc - Song");
+
+    fireEvent.keyDown(screen.getByRole("button", { name: /abc - Song/ }), {
+      key: "Enter",
+    });
+    expect(onPractice).toHaveBeenCalledWith(audio);
+
+    fireEvent.doubleClick(screen.getByText("v1 - Clip"));
+    expect(invoke).toHaveBeenCalledWith("library_open", { path: video.path });
+  });
+
+  it("shows no-results for a search that matches nothing", async () => {
+    const user = userEvent.setup();
+    setup([]);
+    render(<LibraryScreen />);
+    await screen.findByText("Здесь появятся скачанные файлы");
+
+    await user.type(screen.getByLabelText("Поиск в библиотеке"), "zzz");
+
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText("Ничего не найдено. Измените запрос или фильтр."),
+        ).toBeInTheDocument(),
+      { timeout: 2000 },
+    );
+  });
+
+  it("dismisses the import summary", async () => {
+    const user = userEvent.setup();
+    setup();
+    render(<LibraryScreen />);
+    await screen.findByText("abc - Song");
+    startImport.mockResolvedValue({ ...emptyReport, imported: [audio] });
+
+    await act(async () => {
+      await dropState.handler!(["C:\\src\\new.mp3"]);
+    });
+    expect(screen.getByText("Добавлено: 1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Скрыть сообщение" }));
+    expect(screen.queryByText("Добавлено: 1")).toBeNull();
   });
 });

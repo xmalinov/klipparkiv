@@ -23,8 +23,15 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Frontend tests
-        run: npm run test:run
+      - name: Frontend tests and coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: coverage/
+          if-no-files-found: error
 
       - name: Frontend build
         run: npm run build
@@ -48,7 +55,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: clippy, rustfmt, llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -68,3 +75,23 @@ jobs:
 
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Install cargo-llvm-cov
+        if: runner.os == 'Windows'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      # Coverage is measured on Windows only: the macOS matrix is expensive and
+      # platform-gated macOS tests still run in the regular test step.
+      - name: Rust coverage
+        if: runner.os == 'Windows'
+        run: >
+          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --all-targets
+          --fail-under-lines 66 --lcov --output-path src-tauri/lcov.info
+
+      - name: Upload Rust coverage
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: src-tauri/lcov.info
+          if-no-files-found: error

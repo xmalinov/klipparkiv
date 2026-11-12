@@ -595,6 +595,78 @@ mod tests {
         assert!(parse_args(args(&["--wait-pid", "42"])).is_err());
     }
 
+    #[test]
+    fn rejects_invalid_argument_values() {
+        assert!(parse_args(args(&["--wait-pid", "soon"])).is_err());
+        assert!(parse_args(args(&["--source"])).is_err());
+        assert!(parse_args(args(&["--unknown", "value"])).is_err());
+        assert!(parse_args(args(&[])).is_err());
+    }
+
+    #[test]
+    fn log_appends_timestamped_lines() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("updater.log");
+
+        log(&path, "first");
+        log(&path, "second");
+
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.contains("first"));
+        assert!(text.contains("second"));
+        assert!(text.starts_with('['));
+    }
+
+    #[test]
+    fn log_does_not_panic_when_the_file_cannot_be_opened() {
+        let temp = tempfile::tempdir().unwrap();
+        log(temp.path(), "directory path");
+    }
+
+    #[test]
+    fn is_inside_requires_a_child_of_the_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("app");
+        fs::create_dir_all(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let child = root.join("next.exe");
+        fs::write(&child, b"x").unwrap();
+
+        assert!(is_inside(&root, &child));
+        assert!(is_inside(&root, &root.join("missing.exe")));
+        assert!(!is_inside(&root, &temp.path().join("outside.exe")));
+        assert!(!is_inside(&root, &root.join("..").join("outside.exe")));
+
+        let sibling = temp.path().join("application");
+        fs::create_dir_all(&sibling).unwrap();
+        assert!(!is_inside(&root, &sibling.join("next.exe")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn waits_for_a_running_process_and_times_out() {
+        let error = wait_for_pid(std::process::id(), Duration::from_millis(10)).unwrap_err();
+        assert_eq!(error, "timed out waiting for the app to exit");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replaces_a_file_and_keeps_the_previous_copy() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("next.exe");
+        let target = temp.path().join("current.exe");
+        let backup = temp.path().join("backup.exe");
+        fs::write(&source, b"new").unwrap();
+        fs::write(&target, b"old").unwrap();
+
+        replace_file(&source, &target, &backup).unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+        assert_eq!(fs::read_to_string(&backup).unwrap(), "old");
+        assert!(!source.exists());
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn replaces_and_restores_an_app_bundle() {

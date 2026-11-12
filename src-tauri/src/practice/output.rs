@@ -330,6 +330,22 @@ pub fn sample_format_supported(format: SampleFormat) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::practice::decode::DecoderMsg;
+
+    fn shared() -> Shared {
+        Shared::new(48_000, 2, 1.0, 0.0, 1.0, 0.0, 0.0)
+    }
+
+    fn fill(
+        receiver: &Receiver<DecoderMsg>,
+        leftover: &mut VecDeque<f32>,
+        eof: &mut bool,
+        waiting: &mut bool,
+        shared: &Shared,
+        input: &mut [f32],
+    ) -> usize {
+        fill_from_receiver(receiver, leftover, eof, waiting, shared, input)
+    }
 
     #[test]
     fn headroom_is_minus_three_db() {
@@ -338,5 +354,248 @@ mod tests {
         assert!((samples[0] - 0.3535).abs() < 0.001);
         assert!((samples[1] + 0.3535).abs() < 0.001);
         assert_eq!(samples[2], 0.0);
+    }
+
+    #[test]
+    fn click_has_the_expected_length_and_channel_layout() {
+        let click = make_click(1_000, 2, 1_000.0, 0.5);
+        assert_eq!(click.len(), 40); // 20 frames * 2 channels
+        assert!(click.iter().all(|sample| sample.abs() <= 0.5));
+        for frame in click.as_chunks::<2>().0 {
+            assert_eq!(frame[0], frame[1]);
+        }
+        assert!(click[0].abs() < 1e-4);
+    }
+
+    #[test]
+    fn click_envelope_decays_over_time() {
+        let click = make_click(48_000, 1, 1_000.0, 0.5);
+        let quarter = click.len() / 4;
+        let head = click[..quarter]
+            .iter()
+            .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+        let tail = click[click.len() - quarter..]
+            .iter()
+            .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+        assert!(head > tail * 2.0);
+    }
+
+    #[test]
+    fn a_click_shorter_than_one_frame_still_produces_a_frame() {
+        let click = make_click(1, 1, 1_000.0, 0.5);
+        assert_eq!(click.len(), 1);
+    }
+
+    #[test]
+    fn mixing_a_click_scales_and_clips() {
+        let mut output = [0.9f32, 0.0, 0.0];
+        mix_click(&mut output, 1, &[0.5], 0, 1.0);
+        assert_eq!(output[0], 1.0);
+
+        let mut output = [0.1f32, 0.1, 0.1];
+        mix_click(&mut output, 1, &[0.2], 1, 0.5);
+        assert!((output[1] - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mixing_ignores_a_click_past_the_buffer() {
+        let mut output = [1.0f32];
+        mix_click(&mut output, 1, &[0.5], 3, 1.0);
+        assert_eq!(output, [1.0]);
+    }
+
+    #[test]
+    fn mixing_stops_at_the_end_of_the_buffer() {
+        let mut output = [0.0f32; 3];
+        mix_click(&mut output, 1, &[0.1, 0.2, 0.3, 0.4], 1, 1.0);
+        assert!((output[1] - 0.1).abs() < 1e-6);
+        assert!((output[2] - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fills_a_block_from_multiple_chunks_and_keeps_the_tail() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender
+            .send(DecoderMsg::Data(vec![1.0, 2.0, 3.0, 4.0]))
+            .unwrap();
+        sender.send(DecoderMsg::Data(vec![5.0, 6.0])).unwrap();
+        let mut leftover = VecDeque::new();
+        let mut eof = false;
+        let mut waiting = false;
+        let mut input = [0.0f32; 4];
+
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared(),
+            &mut input,
+        );
+
+        assert_eq!(received, 4);
+        assert_eq!(input, [1.0, 2.0, 3.0, 4.0]);
+        assert!(leftover.is_empty());
+        assert!(!eof);
+
+        let mut rest = [0.0f32; 2];
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared(),
+            &mut rest,
+        );
+        assert_eq!(received, 2);
+        assert_eq!(rest, [5.0, 6.0]);
+        assert!(leftover.is_empty());
+    }
+
+    #[test]
+    fn reports_a_partial_fill_when_the_decoder_pauses() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender.send(DecoderMsg::Data(vec![7.0])).unwrap();
+        let mut leftover = VecDeque::new();
+        let mut eof = false;
+        let mut waiting = false;
+        let mut input = [0.0f32; 4];
+
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared(),
+            &mut input,
+        );
+
+        assert_eq!(received, 1);
+        assert_eq!(input[0], 7.0);
+        assert!(leftover.is_empty());
+    }
+
+    #[test]
+    fn a_reset_clears_the_end_of_file_flag() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender.send(DecoderMsg::Reset).unwrap();
+        let mut leftover = VecDeque::new();
+        let mut eof = true;
+        let mut waiting = false;
+        let mut input = [0.0f32; 2];
+
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared(),
+            &mut input,
+        );
+
+        assert_eq!(received, 0);
+        assert!(!eof);
+    }
+
+    #[test]
+    fn an_eof_message_only_sets_the_flag() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender.send(DecoderMsg::Eof).unwrap();
+        let mut leftover = VecDeque::new();
+        let mut eof = false;
+        let mut waiting = false;
+        let mut input = [0.0f32; 2];
+
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared(),
+            &mut input,
+        );
+
+        assert_eq!(received, 0);
+        assert!(eof);
+    }
+
+    #[test]
+    fn decoder_errors_reach_the_shared_state() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender.send(DecoderMsg::Error("bad frame".into())).unwrap();
+        let shared = shared();
+        let mut leftover = VecDeque::new();
+        let mut eof = false;
+        let mut waiting = false;
+        let mut input = [0.0f32; 2];
+
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared,
+            &mut input,
+        );
+
+        assert_eq!(received, 0);
+        assert!(eof);
+        assert!(shared.ended());
+        assert_eq!(shared.take_error().as_deref(), Some("bad frame"));
+    }
+
+    #[test]
+    fn a_waiting_restart_does_not_consume_audio() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender.send(DecoderMsg::Data(vec![1.0, 2.0])).unwrap();
+        let mut leftover = VecDeque::new();
+        let mut eof = false;
+        let mut waiting = true;
+        let mut input = [0.0f32; 2];
+
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared(),
+            &mut input,
+        );
+
+        assert_eq!(received, 0);
+        assert_eq!(input, [0.0, 0.0]);
+        assert!(leftover.is_empty());
+    }
+
+    #[test]
+    fn an_empty_channel_reports_no_samples() {
+        let (sender, receiver) = std::sync::mpsc::channel::<DecoderMsg>();
+        drop(sender);
+        let mut leftover = VecDeque::new();
+        let mut eof = false;
+        let mut waiting = false;
+        let mut input = [0.0f32; 2];
+
+        let received = fill(
+            &receiver,
+            &mut leftover,
+            &mut eof,
+            &mut waiting,
+            &shared(),
+            &mut input,
+        );
+
+        assert_eq!(received, 0);
+        assert!(!eof);
+    }
+
+    #[test]
+    fn only_float_and_sixteen_bit_formats_are_supported() {
+        for format in [SampleFormat::F32, SampleFormat::I16, SampleFormat::U16] {
+            assert!(sample_format_supported(format), "{format:?}");
+        }
+        for format in [SampleFormat::I32, SampleFormat::F64, SampleFormat::I8] {
+            assert!(!sample_format_supported(format), "{format:?}");
+        }
     }
 }

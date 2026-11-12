@@ -86,9 +86,7 @@ pub fn compute(ffmpeg: &Path, path: &Path) -> Result<Waveform, String> {
     let mut base: Vec<i8> = Vec::new();
     let mut carry: Vec<u8> = Vec::new();
     let mut buffer = vec![0u8; 64 * 1024];
-    let mut bucket_min = 1.0f32;
-    let mut bucket_max = -1.0f32;
-    let mut bucket_count = 0usize;
+    let mut buckets = BucketBuilder::new();
     let mut total_samples = 0u64;
 
     loop {
@@ -109,26 +107,12 @@ pub fn compute(ffmpeg: &Path, path: &Path) -> Result<Waveform, String> {
                 carry[start + 3],
             ]);
             total_samples += 1;
-            if sample < bucket_min {
-                bucket_min = sample;
-            }
-            if sample > bucket_max {
-                bucket_max = sample;
-            }
-            bucket_count += 1;
-            if bucket_count == BUCKET_SAMPLES {
-                push_bucket(&mut base, bucket_min, bucket_max);
-                bucket_min = 1.0;
-                bucket_max = -1.0;
-                bucket_count = 0;
-            }
+            buckets.push(sample);
         }
         carry.drain(..complete * 4);
     }
 
-    if bucket_count > 0 {
-        push_bucket(&mut base, bucket_min, bucket_max);
-    }
+    base.extend(buckets.finish());
 
     let status = child.wait().map_err(|error| error.to_string())?;
     if !status.success() {
@@ -163,6 +147,48 @@ fn push_bucket(base: &mut Vec<i8>, min: f32, max: f32) {
     base.push(to_i8(max));
 }
 
+/// Groups decoded samples into fixed 10 ms buckets of (min, max) pairs.
+struct BucketBuilder {
+    base: Vec<i8>,
+    min: f32,
+    max: f32,
+    count: usize,
+}
+
+impl BucketBuilder {
+    fn new() -> Self {
+        Self {
+            base: Vec::new(),
+            min: 1.0,
+            max: -1.0,
+            count: 0,
+        }
+    }
+
+    fn push(&mut self, sample: f32) {
+        if sample < self.min {
+            self.min = sample;
+        }
+        if sample > self.max {
+            self.max = sample;
+        }
+        self.count += 1;
+        if self.count == BUCKET_SAMPLES {
+            push_bucket(&mut self.base, self.min, self.max);
+            self.min = 1.0;
+            self.max = -1.0;
+            self.count = 0;
+        }
+    }
+
+    fn finish(mut self) -> Vec<i8> {
+        if self.count > 0 {
+            push_bucket(&mut self.base, self.min, self.max);
+        }
+        self.base
+    }
+}
+
 fn encode_peaks(peaks: &[i8]) -> String {
     let bytes: Vec<u8> = peaks.iter().map(|value| *value as u8).collect();
     STANDARD.encode(bytes)
@@ -194,6 +220,7 @@ fn derive(base: &[i8], factor: usize) -> Vec<i8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::UNIX_EPOCH;
 
     #[test]
     fn derives_coarser_levels() {
@@ -203,10 +230,152 @@ mod tests {
     }
 
     #[test]
+    fn derive_handles_an_uneven_last_group() {
+        let base = vec![-1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
+        assert_eq!(derive(&base, 2), vec![-2, 2, -4, 4, -5, 5]);
+        assert_eq!(derive(&base, 20), vec![-5, 5]);
+        assert!(derive(&[], 4).is_empty());
+    }
+
+    #[test]
     fn cache_key_changes_with_mtime_and_size() {
         let path = Path::new("C:\\media\\song.mp3");
         assert_eq!(cache_key(path, 10, 100), cache_key(path, 10, 100));
         assert_ne!(cache_key(path, 10, 100), cache_key(path, 11, 100));
         assert_ne!(cache_key(path, 10, 100), cache_key(path, 10, 101));
+        assert_ne!(
+            cache_key(path, 10, 100),
+            cache_key(Path::new("C:\\media\\other.mp3"), 10, 100)
+        );
+    }
+
+    #[test]
+    fn buckets_group_samples_and_flush_the_tail() {
+        let mut builder = BucketBuilder::new();
+        for _ in 0..BUCKET_SAMPLES {
+            builder.push(0.5);
+        }
+        for _ in 0..5 {
+            builder.push(-0.5);
+        }
+        assert_eq!(builder.finish(), vec![64, 64, -64, -64]);
+
+        assert!(BucketBuilder::new().finish().is_empty());
+    }
+
+    #[test]
+    fn buckets_clamp_out_of_range_samples() {
+        let mut builder = BucketBuilder::new();
+        builder.push(2.0);
+        builder.push(-2.0);
+        assert_eq!(builder.finish(), vec![-127, 127]);
+    }
+
+    #[test]
+    fn peak_values_are_clamped_and_rounded() {
+        assert_eq!(to_i8(0.0), 0);
+        assert_eq!(to_i8(1.0), 127);
+        assert_eq!(to_i8(-1.0), -127);
+        assert_eq!(to_i8(2.0), 127);
+        assert_eq!(to_i8(-2.0), -127);
+        assert_eq!(to_i8(0.5), 64);
+        assert_eq!(to_i8(-0.5), -64);
+    }
+
+    #[test]
+    fn peaks_encode_as_signed_bytes_in_base64() {
+        assert_eq!(encode_peaks(&[-10, 10]), "9go=");
+        assert_eq!(encode_peaks(&[]), "");
+    }
+
+    #[test]
+    fn a_cached_waveform_is_returned_without_running_ffmpeg() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let audio = dir.path().join("song.mp3");
+        fs::write(&audio, b"not really audio").expect("audio");
+        let metadata = fs::metadata(&audio).expect("metadata");
+        let mtime = metadata
+            .modified()
+            .expect("mtime")
+            .duration_since(UNIX_EPOCH)
+            .expect("epoch")
+            .as_secs() as i64;
+        let key = cache_key(&audio, mtime, metadata.len());
+        let cache_dir = dir.path().join("waveforms");
+        fs::create_dir_all(&cache_dir).expect("cache dir");
+        let cached = Waveform {
+            version: WAVEFORM_VERSION,
+            duration_secs: 12.5,
+            levels: vec![WaveformLevel {
+                step_secs: 0.01,
+                peaks: "AA==".into(),
+            }],
+        };
+        fs::write(
+            cache_dir.join(format!("{key}.json")),
+            serde_json::to_string(&cached).expect("json"),
+        )
+        .expect("cache write");
+
+        let loaded =
+            load_or_compute(Path::new("missing-ffmpeg"), &cache_dir, &audio).expect("cache hit");
+
+        assert_eq!(loaded.duration_secs, 12.5);
+        assert_eq!(loaded.levels.len(), 1);
+    }
+
+    #[test]
+    fn a_stale_cache_version_forces_a_recompute() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let audio = dir.path().join("song.mp3");
+        fs::write(&audio, b"not really audio").expect("audio");
+        let metadata = fs::metadata(&audio).expect("metadata");
+        let mtime = metadata
+            .modified()
+            .expect("mtime")
+            .duration_since(UNIX_EPOCH)
+            .expect("epoch")
+            .as_secs() as i64;
+        let key = cache_key(&audio, mtime, metadata.len());
+        let cache_dir = dir.path().join("waveforms");
+        fs::create_dir_all(&cache_dir).expect("cache dir");
+        let stale = Waveform {
+            version: WAVEFORM_VERSION + 1,
+            duration_secs: 1.0,
+            levels: vec![],
+        };
+        fs::write(
+            cache_dir.join(format!("{key}.json")),
+            serde_json::to_string(&stale).expect("json"),
+        )
+        .expect("cache write");
+
+        let error = load_or_compute(Path::new("missing-ffmpeg"), &cache_dir, &audio)
+            .expect_err("must recompute");
+
+        assert!(error.contains("cannot start ffmpeg for waveform"));
+    }
+
+    #[test]
+    fn a_corrupt_cache_entry_forces_a_recompute() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let audio = dir.path().join("song.mp3");
+        fs::write(&audio, b"not really audio").expect("audio");
+        let metadata = fs::metadata(&audio).expect("metadata");
+        let mtime = metadata
+            .modified()
+            .expect("mtime")
+            .duration_since(UNIX_EPOCH)
+            .expect("epoch")
+            .as_secs() as i64;
+        let key = cache_key(&audio, mtime, metadata.len());
+        let cache_dir = dir.path().join("waveforms");
+        fs::create_dir_all(&cache_dir).expect("cache dir");
+        fs::write(cache_dir.join(format!("{key}.json")), "{not json").expect("cache write");
+
+        let error = load_or_compute(Path::new("missing-ffmpeg"), &cache_dir, &audio)
+            .expect_err("must recompute");
+
+        assert!(error.contains("cannot start ffmpeg for waveform"));
     }
 }

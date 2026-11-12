@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -47,6 +48,47 @@ const info = {
   ffprobe: "2026-10-29",
   binaries,
 };
+
+function routeCommands() {
+  invoke.mockImplementation((command: string) => {
+    switch (command) {
+      case "app_info":
+        return Promise.resolve(info);
+      case "get_settings":
+        return Promise.resolve({
+          audioSubdir: "audio",
+          videoSubdir: "video",
+          concurrency: 2,
+          theme: "dark",
+          language: "ru",
+          scanDepth: 3,
+          autoscan: true,
+          embedThumbnail: true,
+        });
+      case "library_scan":
+        return Promise.resolve({ scanned: 0, added: 0, updated: 0, removed: 0 });
+      case "library_query":
+        return Promise.resolve({ items: [], total: 0 });
+      case "practice_recent":
+        return Promise.resolve([]);
+      case "practice_analysis_get":
+        return Promise.resolve(null);
+      case "get_update_status":
+        return Promise.resolve({
+          state: "idle",
+          currentVersion: "1.7.1",
+          version: null,
+          notes: null,
+          size: null,
+          downloaded: 0,
+          percent: 0,
+          error: null,
+        });
+      default:
+        return Promise.resolve(null);
+    }
+  });
+}
 
 describe("App", () => {
   beforeEach(() => {
@@ -114,5 +156,41 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Не удалось прочитать окружение: backend is down",
     );
+  });
+
+  it("navigates between download, library and practice", async () => {
+    const user = userEvent.setup();
+    routeCommands();
+    render(<App />);
+    await screen.findByText(/yt-dlp 2026\.10\.26/);
+
+    await user.click(screen.getByRole("button", { name: "Библиотека" }));
+    expect(
+      screen.getByRole("heading", { name: "Библиотека" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Здесь появятся скачанные файлы")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Практика" }));
+    expect(
+      screen.getByRole("heading", { name: "Практика" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Загрузка" }));
+    expect(
+      screen.getByRole("heading", { name: "Загрузка" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens and closes the settings dialog", async () => {
+    const user = userEvent.setup();
+    routeCommands();
+    render(<App />);
+    await screen.findByText(/yt-dlp 2026\.10\.26/);
+
+    await user.click(screen.getByRole("button", { name: "Настройки" }));
+    expect(screen.getByRole("dialog", { name: "Настройки" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

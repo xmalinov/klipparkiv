@@ -1,31 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { decodePeaks, type WaveformLevel } from "../../api/practice";
+import { decodePeaks } from "../../api/practice";
 import { useI18n } from "../../i18n";
 import { usePractice } from "./PracticeProvider";
-
-const MIN_VIEW_SECS = 0.5;
-
-function formatClock(seconds: number, precision = 1): string {
-  const safe = Math.max(0, seconds);
-  const minutes = Math.floor(safe / 60);
-  const rest = safe - minutes * 60;
-  return `${minutes}:${rest.toFixed(precision).padStart(precision > 0 ? 3 + precision : 2, "0")}`;
-}
-
-function pickLevel(
-  levels: WaveformLevel[],
-  viewSeconds: number,
-  width: number,
-): WaveformLevel | null {
-  if (levels.length === 0 || width <= 0) return null;
-  const target = viewSeconds / Math.max(1, width);
-  const sorted = [...levels].sort((left, right) => left.stepSecs - right.stepSecs);
-  let chosen = sorted[0];
-  for (const level of sorted) {
-    if (level.stepSecs <= target * 2) chosen = level;
-  }
-  return chosen;
-}
+import {
+  MIN_VIEW_SECS,
+  clampViewRange,
+  createSelection,
+  edgeTolerance as edgeToleranceFor,
+  fitView,
+  formatClock,
+  moveSelection,
+  pickLevel,
+  regionAt as regionAtTime,
+  regionEdgeAt as findRegionEdge,
+  resizeRegionEnd,
+  resizeRegionStart,
+  resizeSelectionEnd,
+  resizeSelectionStart,
+  selectionEdgeAt as findSelectionEdge,
+  timeToX as mapTimeToX,
+  xToTime as mapXToTime,
+  zoomViewRange,
+} from "./waveformMath";
 
 type DragState =
   | { kind: "create"; anchor: number; current: number }
@@ -107,41 +103,24 @@ export default function Waveform({ height = 190 }: { height?: number }) {
   const peaks = useMemo(() => (level ? decodePeaks(level.peaks) : null), [level]);
 
   const timeToX = useCallback(
-    (time: number) => ((time - view.start) / viewDuration) * width,
-    [view.start, viewDuration, width],
+    (time: number) => mapTimeToX(time, view, viewDuration, width),
+    [view, viewDuration, width],
   );
   const xToTime = useCallback(
-    (x: number) => view.start + (x / Math.max(1, width)) * viewDuration,
-    [view.start, viewDuration, width],
+    (x: number) => mapXToTime(x, view, viewDuration, width),
+    [view, viewDuration, width],
   );
 
   const clampView = useCallback(
     (start: number, end: number) => {
-      const total = Math.max(MIN_VIEW_SECS, duration);
-      const span = Math.min(total, Math.max(MIN_VIEW_SECS, end - start));
-      setView(() => {
-        let nextStart = Math.max(0, Math.min(start, total - span));
-        if (nextStart < 0) nextStart = 0;
-        return { start: nextStart, end: nextStart + span };
-      });
+      setView(clampViewRange(start, end, duration));
     },
     [duration],
   );
 
   const zoomAt = useCallback(
     (factor: number, center: number) => {
-      const total = Math.max(MIN_VIEW_SECS, duration);
-      setView((current) => {
-        const currentSpan = Math.max(MIN_VIEW_SECS, current.end - current.start);
-        const nextSpan = Math.min(
-          total,
-          Math.max(MIN_VIEW_SECS, currentSpan * factor),
-        );
-        const ratio = (center - current.start) / currentSpan;
-        let start = center - ratio * nextSpan;
-        start = Math.max(0, Math.min(start, total - nextSpan));
-        return { start, end: start + nextSpan };
-      });
+      setView((current) => zoomViewRange(current, factor, center, duration));
     },
     [duration],
   );
@@ -303,35 +282,19 @@ export default function Waveform({ height = 190 }: { height?: number }) {
   const total = Math.max(0.1, duration || 0.1);
 
   function regionAt(time: number) {
-    return (
-      state.regions.find((region) => time >= region.start && time <= region.end) ??
-      null
-    );
+    return regionAtTime(time, state.regions);
   }
 
   function edgeTolerance() {
-    return width > 0 ? (7 / width) * viewDuration : 0.02;
+    return edgeToleranceFor(width, viewDuration);
   }
 
   function selectionEdgeAt(time: number) {
-    if (!selection) return null;
-    const tolerance = edgeTolerance();
-    if (Math.abs(time - selection.start) <= tolerance) return "start";
-    if (Math.abs(time - selection.end) <= tolerance) return "end";
-    return null;
+    return findSelectionEdge(time, selection, edgeTolerance());
   }
 
   function regionEdgeAt(time: number) {
-    const tolerance = edgeTolerance();
-    for (const region of state.regions) {
-      if (Math.abs(time - region.start) <= tolerance) {
-        return { region, edge: "start" as const };
-      }
-      if (Math.abs(time - region.end) <= tolerance) {
-        return { region, edge: "end" as const };
-      }
-    }
-    return null;
+    return findRegionEdge(time, state.regions, edgeTolerance());
   }
 
   function pointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -423,10 +386,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     switch (drag.kind) {
       case "create":
         drag.current = snapped;
-        setSelection({
-          start: Math.max(0, Math.min(drag.anchor, snapped)),
-          end: Math.min(total, Math.max(drag.anchor, snapped)),
-        });
+        setSelection(createSelection(drag.anchor, snapped, total));
         break;
       case "selection-move": {
         const span = drag.end - drag.start;
@@ -434,44 +394,29 @@ export default function Waveform({ height = 190 }: { height?: number }) {
         start = event.altKey
           ? Math.max(0, Math.min(start, total - span))
           : snapTime(start);
-        start = Math.max(0, Math.min(start, total - span));
-        setSelection({ start, end: start + span });
+        setSelection(moveSelection(start, span, total));
         break;
       }
       case "selection-start": {
-        const end = drag.fixed;
-        setSelection({
-          start: Math.max(0, Math.min(snapped, end - 0.05)),
-          end,
-        });
+        setSelection(resizeSelectionStart(snapped, drag.fixed));
         break;
       }
       case "selection-end": {
-        const start = drag.fixed;
-        setSelection({
-          start,
-          end: Math.min(total, Math.max(snapped, start + 0.05)),
-        });
+        setSelection(resizeSelectionEnd(drag.fixed, snapped, total));
         break;
       }
       case "region-start": {
         const region = state.regions.find((entry) => entry.id === drag.regionId);
         if (!region) break;
-        setRegionPreview({
-          id: region.id,
-          start: Math.max(0, Math.min(snapped, drag.fixed - 0.05)),
-          end: drag.fixed,
-        });
+        const preview = resizeRegionStart(snapped, drag.fixed);
+        setRegionPreview({ id: region.id, ...preview });
         break;
       }
       case "region-end": {
         const region = state.regions.find((entry) => entry.id === drag.regionId);
         if (!region) break;
-        setRegionPreview({
-          id: region.id,
-          start: drag.fixed,
-          end: Math.min(total, Math.max(snapped, drag.fixed + 0.05)),
-        });
+        const preview = resizeRegionEnd(drag.fixed, snapped, total);
+        setRegionPreview({ id: region.id, ...preview });
         break;
       }
     }
@@ -508,11 +453,11 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       if (!region) return;
       const start =
         drag.kind === "region-start"
-          ? Math.max(0, Math.min(snapped, drag.fixed - 0.05))
+          ? resizeRegionStart(snapped, drag.fixed).start
           : drag.fixed;
       const end =
         drag.kind === "region-end"
-          ? Math.min(total, Math.max(snapped, drag.fixed + 0.05))
+          ? resizeRegionEnd(drag.fixed, snapped, total).end
           : drag.fixed;
       updateRegion(region.id, { start, end });
     }
@@ -520,7 +465,10 @@ export default function Waveform({ height = 190 }: { height?: number }) {
 
   function doubleClick(event: React.MouseEvent<HTMLCanvasElement>) {
     const bounds = event.currentTarget.getBoundingClientRect();
-    const region = regionAt(xToTime(event.clientX - bounds.left));
+    const region = regionAtTime(
+      xToTime(event.clientX - bounds.left),
+      state.regions,
+    );
     if (region) loopRegion(region.id);
   }
 
@@ -583,7 +531,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
           className="chip waveform-fit"
           aria-label={t("practice.fit")}
           title={t("practice.fit")}
-          onClick={() => setView({ start: 0, end: Math.max(MIN_VIEW_SECS, duration) })}
+          onClick={() => setView(fitView(duration))}
         >
           {t("practice.fit")}
         </button>

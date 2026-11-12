@@ -6,7 +6,7 @@ use crate::practice::decode;
 pub const MAX_CACHE_SECS: f64 = 120.0;
 pub const FADE_SECS: f64 = 0.005;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LoopSettings {
     pub start: f64,
     pub end: f64,
@@ -51,8 +51,11 @@ pub fn load_cache(
 }
 
 pub fn apply_fade(pcm: &mut [f32], channels: usize, sample_rate: u32, seconds: f64) {
+    if channels == 0 {
+        return;
+    }
     let frames = pcm.len() / channels;
-    if frames == 0 || channels == 0 {
+    if frames == 0 {
         return;
     }
     let fade_frames = ((sample_rate as f64 * seconds) as usize).min(frames / 2);
@@ -90,5 +93,32 @@ mod tests {
         apply_fade(&mut pcm, 1, 48_000, 1.0);
         assert_eq!(pcm[0], 0.0);
         assert_eq!(pcm[3], 0.0);
+    }
+
+    #[test]
+    fn fade_ignores_empty_buffers_and_invalid_channels() {
+        let mut empty: Vec<f32> = Vec::new();
+        apply_fade(&mut empty, 2, 48_000, 0.01);
+
+        let mut samples = vec![1.0f32; 8];
+        apply_fade(&mut samples, 0, 48_000, 0.01);
+        assert!(samples.iter().all(|sample| *sample == 1.0));
+    }
+
+    #[test]
+    fn fade_with_zero_length_is_a_no_op() {
+        let mut pcm = vec![1.0f32; 10];
+        apply_fade(&mut pcm, 1, 48_000, 0.0);
+        assert!(pcm.iter().all(|sample| *sample == 1.0));
+    }
+
+    #[test]
+    fn fade_is_capped_at_half_the_buffer() {
+        let mut pcm = vec![1.0f32; 10];
+        apply_fade(&mut pcm, 1, 48_000, 1.0);
+        assert_eq!(pcm[0], 0.0);
+        assert_eq!(pcm[9], 0.0);
+        // Five frames per side: the last faded tail frame gets 4/5 gain.
+        assert!((pcm[5] - 0.8).abs() < 1e-6);
     }
 }

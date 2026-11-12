@@ -80,3 +80,15 @@ pub fn latency_secs(channels: u32, sample_rate: u32) -> f64 {
     let stretch = Stretch::new(channels, sample_rate);
     (stretch.input_latency() + stretch.output_latency()) as f64 / sample_rate as f64
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latency_is_reported_in_seconds() {
+        let latency = latency_secs(2, 48_000);
+        assert!(latency > 0.0);
+        assert!(latency < 1.0);
+    }
+}

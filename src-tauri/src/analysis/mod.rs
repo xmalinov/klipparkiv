@@ -279,3 +279,58 @@ fn run_job_inner(
     cache::save(cache_dir, cache_key, &analysis)?;
     Ok(analysis)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancel_job_marks_the_running_job_and_clears_the_slot() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut slot = Some(Job {
+            path: "song.mp3".into(),
+            cancel: cancel.clone(),
+            progress: Arc::new(AtomicU32::new(0.0f32.to_bits())),
+        });
+
+        cancel_job(&mut slot);
+
+        assert!(cancel.load(Ordering::Relaxed));
+        assert!(slot.is_none());
+
+        // Cancelling an idle state is a no-op.
+        cancel_job(&mut slot);
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn file_identity_reports_size_and_mtime() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("song.mp3");
+        fs::write(&file, b"12345").expect("write");
+
+        let (mtime, size) = file_identity(&file).expect("identity");
+
+        assert_eq!(size, 5);
+        assert!(mtime > 1_600_000_000);
+    }
+
+    #[test]
+    fn file_identity_reports_missing_files() {
+        let error = file_identity(Path::new("definitely-missing.mp3")).expect_err("missing file");
+        assert!(error.starts_with("cannot read file:"));
+    }
+
+    #[test]
+    fn probe_duration_is_none_without_ffprobe() {
+        assert_eq!(
+            probe_duration(Path::new("missing-ffprobe"), Path::new("song.mp3")),
+            None
+        );
+    }
+
+    #[test]
+    fn now_secs_is_a_unix_timestamp() {
+        assert!(now_secs() > 1_600_000_000);
+    }
+}

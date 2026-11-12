@@ -669,9 +669,29 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::practice::state::Region;
 
     fn player() -> Player {
         Player::new(PathBuf::from("ffmpeg"))
+    }
+
+    fn opened(duration: Option<f64>) -> Player {
+        let mut player = player();
+        player
+            .open(PathBuf::from("song.mp3"), duration)
+            .expect("open");
+        player
+    }
+
+    fn region(start: f64, end: f64) -> Region {
+        Region {
+            id: "r1".into(),
+            name: "Verse".into(),
+            kind: "verse".into(),
+            color: "#fff".into(),
+            start,
+            end,
+        }
     }
 
     #[test]
@@ -712,5 +732,239 @@ mod tests {
         let player = player();
         assert!(player.snapshot().is_none());
         assert!(!player.has_track());
+    }
+
+    #[test]
+    fn opening_a_track_resets_playback_metadata() {
+        let player = opened(Some(10.0));
+        let snapshot = player.snapshot().expect("snapshot");
+
+        assert!(player.has_track());
+        assert_eq!(snapshot.position_secs, 0.0);
+        assert_eq!(snapshot.duration_secs, Some(10.0));
+        assert!(!snapshot.playing);
+        assert!(!snapshot.ended);
+        assert_eq!(snapshot.underruns, 0);
+        assert_eq!(player.sample_rate(), None);
+        assert_eq!(player.channels(), None);
+        assert_eq!(player.take_error(), None);
+    }
+
+    #[test]
+    fn closing_resets_the_track() {
+        let mut player = opened(Some(10.0));
+        player.close();
+        assert!(!player.has_track());
+        assert!(player.snapshot().is_none());
+        assert_eq!(player.position(), None);
+    }
+
+    #[test]
+    fn playback_requires_an_open_track() {
+        let mut player = player();
+        assert_eq!(player.play().unwrap_err(), "no track is open");
+        assert_eq!(player.seek(1.0).unwrap_err(), "no track is open");
+        assert_eq!(player.pause().unwrap(), ());
+        player.apply_state(&PracticeState::default());
+        assert!(!player.has_track());
+    }
+
+    #[test]
+    fn applying_state_clamps_speed_pitch_volume_and_position() {
+        let mut player = opened(Some(10.0));
+        let state = PracticeState {
+            speed: 5.0,
+            pitch_semitones: 20.0,
+            cents: 25.0,
+            volume: 2.0,
+            position_secs: -4.0,
+            ..PracticeState::default()
+        };
+        player.apply_state(&state);
+
+        let track = player.track.as_ref().expect("track");
+        assert_eq!(track.speed, 2.0);
+        assert_eq!(track.pitch, 12.0);
+        assert_eq!(track.volume, 1.0);
+        assert_eq!(track.position, 0.0);
+
+        let past_end = PracticeState {
+            position_secs: 99.0,
+            ..PracticeState::default()
+        };
+        player.apply_state(&past_end);
+        assert_eq!(player.track.as_ref().unwrap().position, 10.0);
+    }
+
+    #[test]
+    fn applying_state_installs_the_active_loop_and_snaps_into_it() {
+        let mut player = opened(Some(20.0));
+        let state = PracticeState {
+            loop_enabled: true,
+            active_region_id: Some("r1".into()),
+            regions: vec![region(5.0, 8.0)],
+            position_secs: 2.0,
+            ..PracticeState::default()
+        };
+        player.apply_state(&state);
+
+        let track = player.track.as_ref().unwrap();
+        assert_eq!(track.position, 5.0);
+        assert_eq!(
+            track.loop_settings,
+            Some(LoopSettings {
+                start: 5.0,
+                end: 8.0,
+                pre_roll: true,
+                pre_roll_secs: 2.0,
+            })
+        );
+    }
+
+    #[test]
+    fn applying_state_without_a_region_clears_the_loop() {
+        let mut player = opened(Some(20.0));
+        let state = PracticeState {
+            loop_enabled: true,
+            active_region_id: Some("missing".into()),
+            regions: vec![region(5.0, 8.0)],
+            position_secs: 4.0,
+            ..PracticeState::default()
+        };
+        player.apply_state(&state);
+
+        let track = player.track.as_ref().unwrap();
+        assert_eq!(track.loop_settings, None);
+        assert_eq!(track.position, 4.0);
+    }
+
+    #[test]
+    fn seeking_pulls_the_position_into_the_loop() {
+        let mut player = opened(Some(10.0));
+        player
+            .set_loop(true, Some(5.0), Some(8.0), false, None)
+            .unwrap();
+
+        player.seek(2.0).unwrap();
+        assert_eq!(player.position(), Some(5.0));
+        player.seek(7.0).unwrap();
+        assert_eq!(player.position(), Some(7.0));
+        player.seek(20.0).unwrap();
+        assert_eq!(player.position(), Some(5.0));
+    }
+
+    #[test]
+    fn loop_settings_are_validated() {
+        let mut with_track = opened(Some(10.0));
+        assert_eq!(
+            with_track
+                .set_loop(true, None, Some(4.0), false, None)
+                .unwrap_err(),
+            "loop start is required"
+        );
+        assert_eq!(
+            with_track
+                .set_loop(true, Some(1.0), None, false, None)
+                .unwrap_err(),
+            "loop end is required"
+        );
+        assert_eq!(
+            with_track
+                .set_loop(true, Some(4.0), Some(4.0), false, None)
+                .unwrap_err(),
+            "loop region must have start < end"
+        );
+        assert_eq!(
+            with_track
+                .set_loop(true, Some(-1.0), Some(4.0), false, None)
+                .unwrap_err(),
+            "loop region must have start < end"
+        );
+        assert_eq!(
+            with_track
+                .set_loop(true, Some(f64::NAN), Some(4.0), false, None)
+                .unwrap_err(),
+            "loop region must have start < end"
+        );
+        assert_eq!(
+            with_track
+                .set_loop(true, Some(1.0), Some(30.0), false, None)
+                .unwrap_err(),
+            "loop region is outside the track"
+        );
+
+        let mut no_track = player();
+        assert_eq!(
+            no_track
+                .set_loop(true, Some(1.0), Some(2.0), false, None)
+                .unwrap_err(),
+            "no track is open"
+        );
+    }
+
+    #[test]
+    fn loop_pre_roll_rewinds_and_is_clamped() {
+        let mut player = opened(Some(100.0));
+        player.seek(50.0).unwrap();
+        player
+            .set_loop(true, Some(10.0), Some(20.0), true, None)
+            .unwrap();
+        assert_eq!(player.position(), Some(8.0));
+
+        player
+            .set_loop(true, Some(10.0), Some(20.0), true, Some(100.0))
+            .unwrap();
+        assert_eq!(player.position(), Some(0.0));
+
+        player
+            .set_loop(true, Some(10.0), Some(20.0), true, Some(-5.0))
+            .unwrap();
+        assert_eq!(player.position(), Some(10.0));
+    }
+
+    #[test]
+    fn disabling_the_loop_keeps_the_current_position() {
+        let mut player = opened(Some(10.0));
+        player
+            .set_loop(true, Some(2.0), Some(4.0), false, None)
+            .unwrap();
+        assert_eq!(player.position(), Some(2.0));
+
+        player.set_loop(false, None, None, false, None).unwrap();
+        assert_eq!(player.position(), Some(2.0));
+        assert_eq!(player.track.as_ref().unwrap().loop_settings, None);
+    }
+
+    #[test]
+    fn validation_runs_even_without_a_track() {
+        let mut player = player();
+        assert!(player.set_speed(3.0).is_err());
+        assert!(player.set_pitch(20.0, 0.0).is_err());
+        assert!(player.set_volume(-1.0).is_err());
+        assert!(player.set_speed(1.5).is_ok());
+        assert!(player.set_pitch(0.0, 0.0).is_ok());
+        assert!(player.set_volume(0.5).is_ok());
+    }
+
+    #[test]
+    fn metronome_state_is_clamped_and_kept_without_a_session() {
+        let mut player = player();
+        player.set_metronome(true, 4.0);
+        assert!(player.metronome_enabled);
+        assert_eq!(player.metronome_volume, 1.0);
+
+        player.set_metronome(false, -2.0);
+        assert!(!player.metronome_enabled);
+        assert_eq!(player.metronome_volume, 0.0);
+
+        player.set_grid(None);
+        assert!(player.grid.is_none());
+    }
+
+    #[test]
+    fn snapshot_clamps_to_the_track_duration() {
+        let mut player = opened(Some(10.0));
+        player.track.as_mut().unwrap().position = 99.0;
+        assert_eq!(player.snapshot().unwrap().position_secs, 10.0);
     }
 }
