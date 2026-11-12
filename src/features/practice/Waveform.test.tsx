@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PracticeRegion } from "../../api/practice";
 import Waveform from "./Waveform";
@@ -106,6 +106,8 @@ interface Harness {
   updateRegion?: ReturnType<typeof vi.fn>;
   loopRegion?: ReturnType<typeof vi.fn>;
   snapTime?: ReturnType<typeof vi.fn>;
+  grid?: Record<string, unknown>;
+  snapshot?: Record<string, unknown>;
 }
 
 function renderWaveform(harness: Harness = {}) {
@@ -139,6 +141,8 @@ function renderWaveform(harness: Harness = {}) {
       barStarts: [0, 4, 8],
       beatsPerBar: 4,
       barOffset: 0,
+      pickupUntil: null,
+      confidence: 1,
     },
     snapTime: (time: number) => Math.round(time),
     ...harness,
@@ -172,7 +176,7 @@ function pointer(
 }
 
 describe("Waveform", () => {
-  it("draws the time ruler, bars, region name and playhead", () => {
+  it("draws the time ruler, bars and region name, and positions the playhead", () => {
     renderWaveform();
 
     expect(drawing.texts).toContain("0:00");
@@ -180,6 +184,86 @@ describe("Waveform", () => {
     expect(drawing.texts).toContain("1");
     expect(drawing.context.stroke).toHaveBeenCalled();
     expect(drawing.context.moveTo).toHaveBeenCalled();
+    expect(screen.getByTestId("waveform-playhead")).toHaveStyle({
+      transform: "translateX(100px)",
+    });
+  });
+
+  it("does not redraw the canvas when only the playhead moves", () => {
+    const { rerender } = renderWaveform();
+    const drawCalls = drawing.context.clearRect.mock.calls.length;
+    const snapshot = practice.value.snapshot as Record<string, unknown>;
+    practice.value = {
+      ...practice.value,
+      snapshot: { ...snapshot, positionSecs: 5 },
+    };
+
+    rerender(<Waveform height={190} />);
+
+    expect(drawing.context.clearRect).toHaveBeenCalledTimes(drawCalls);
+    expect(screen.getByTestId("waveform-playhead")).toHaveStyle({
+      transform: "translateX(250px)",
+    });
+  });
+
+  it("batches grid lines instead of stroking each one", () => {
+    renderWaveform();
+    // Background, waveform, beats and bars: a handful of strokes for 11 beats
+    // and 3 bars. Per-line stroking would need more than 16.
+    expect(drawing.context.stroke.mock.calls.length).toBeLessThan(10);
+  });
+
+  it("culls bar numbers when bars are too close", () => {
+    const dense = Array.from({ length: 100 }, (_, index) => index * 0.1);
+    renderWaveform({
+      grid: {
+        bpm: 120,
+        beats: dense,
+        downbeats: dense,
+        barStarts: dense,
+        beatsPerBar: 4,
+        barOffset: 0,
+        pickupUntil: null,
+        confidence: 1,
+      },
+    });
+
+    const numbers = drawing.texts.filter((text) => /^\d+$/.test(text));
+    expect(numbers.length).toBeLessThan(30);
+  });
+
+  it("hides the playhead when it is outside the visible range", () => {
+    renderWaveform({
+      snapshot: {
+        positionSecs: 20,
+        durationSecs: 10,
+        playing: false,
+        ended: false,
+        underruns: 0,
+      },
+    });
+
+    expect(screen.getByTestId("waveform-playhead")).toHaveStyle({
+      opacity: "0",
+    });
+  });
+
+  it("zooms and prevents page scroll on wheel over the waveform", () => {
+    const { canvas } = renderWaveform();
+    const draws = drawing.context.clearRect.mock.calls.length;
+    const event = new WheelEvent("wheel", {
+      deltaY: 100,
+      clientX: 250,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      canvas.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(drawing.context.clearRect.mock.calls.length).toBeGreaterThan(draws);
   });
 
   it("shows the loading overlay while peaks are fetched", () => {
@@ -217,6 +301,27 @@ describe("Waveform", () => {
     pointer(canvas, "pointerUp", 50);
 
     expect(seek).toHaveBeenCalledWith(1);
+  });
+
+  it("seeks to a click even when it is far from a snap point", () => {
+    const seek = vi.fn();
+    const { canvas } = renderWaveform({ seek });
+
+    // 60 px of 500 px over 10 s is 1.2 s; the default snap rounds it to 1 s.
+    pointer(canvas, "pointerDown", 60);
+    pointer(canvas, "pointerUp", 60);
+
+    expect(seek).toHaveBeenCalledWith(1.2);
+  });
+
+  it("seeks with a small pointer jitter", () => {
+    const seek = vi.fn();
+    const { canvas } = renderWaveform({ seek });
+
+    pointer(canvas, "pointerDown", 60);
+    pointer(canvas, "pointerUp", 63);
+
+    expect(seek).toHaveBeenCalledWith(1.26);
   });
 
   it("creates a selection by dragging", () => {

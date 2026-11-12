@@ -35,17 +35,13 @@ impl TryFrom<GridPayload> for MetronomeGrid {
         if payload.beats.len() < 2 {
             return Err("not enough beats for a metronome".into());
         }
-        if payload
-            .beats
-            .windows(2)
-            .any(|pair| !pair[0].is_finite() || pair[1] <= pair[0])
+        if payload.beats.iter().any(|beat| !beat.is_finite())
+            || payload.beats.windows(2).any(|pair| pair[1] <= pair[0])
         {
             return Err("beats must be finite and sorted".into());
         }
-        if payload
-            .downbeats
-            .windows(2)
-            .any(|pair| !pair[0].is_finite() || pair[1] < pair[0])
+        if payload.downbeats.iter().any(|beat| !beat.is_finite())
+            || payload.downbeats.windows(2).any(|pair| pair[1] < pair[0])
         {
             return Err("downbeats must be finite and sorted".into());
         }
@@ -164,14 +160,78 @@ mod tests {
     }
 
     #[test]
+    fn accents_follow_irregular_downbeats() {
+        let grid = MetronomeGrid::try_from(GridPayload {
+            bpm: 120.0,
+            beats_per_bar: 4,
+            bar_offset: 3,
+            beats: vec![0.0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8],
+            downbeats: vec![0.4, 1.6, 2.8],
+        })
+        .unwrap();
+
+        let events = click_events(&grid, 0.0, 3.0, 300);
+        assert!(!events[0].accent);
+        let accents: Vec<usize> = events
+            .iter()
+            .filter(|event| event.accent)
+            .map(|event| event.frame)
+            .collect();
+        assert_eq!(accents.len(), 3);
+        for (actual, expected) in accents.iter().zip([40i64, 160, 280]) {
+            assert!((*actual as i64 - expected).abs() <= 1);
+        }
+    }
+
+    #[test]
     fn payload_validation_rejects_bad_grids() {
-        let payload = GridPayload {
+        let valid = || GridPayload {
             bpm: 120.0,
             beats_per_bar: 4,
             bar_offset: 0,
             beats: vec![0.0, 0.5, 1.0],
             downbeats: vec![0.0],
         };
-        assert!(MetronomeGrid::try_from(payload).is_ok());
+        assert!(MetronomeGrid::try_from(valid()).is_ok());
+
+        let mut payload = valid();
+        payload.bar_offset = 4;
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.beats_per_bar = 0;
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.beats_per_bar = 17;
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.bpm = 10.0;
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.beats = vec![0.0, 0.5, 0.4];
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.beats = vec![0.0, 0.5, 0.5];
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.beats = vec![0.0, 0.5, f64::NAN];
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.downbeats = vec![1.0, 0.5];
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.downbeats = vec![f64::NAN];
+        assert!(MetronomeGrid::try_from(payload).is_err());
+
+        let mut payload = valid();
+        payload.beats = vec![0.0];
+        assert!(MetronomeGrid::try_from(payload).is_err());
     }
 }

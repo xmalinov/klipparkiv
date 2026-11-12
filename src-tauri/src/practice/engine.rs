@@ -565,10 +565,17 @@ impl Player {
         };
 
         let position = match settings {
-            Some(settings) if settings.pre_roll => {
-                (settings.start - settings.pre_roll_secs).max(0.0)
+            Some(settings) => {
+                // Clicking inside an active region must keep the click position;
+                // moving to the region start is only for positions outside it.
+                if current >= settings.start && current <= settings.end {
+                    current
+                } else if settings.pre_roll {
+                    (settings.start - settings.pre_roll_secs).max(0.0)
+                } else {
+                    settings.start
+                }
             }
-            Some(settings) => settings.start,
             None => current,
         };
         let was_playing = self.session.as_ref().map(Session::playing).unwrap_or(false);
@@ -920,6 +927,16 @@ mod tests {
             .set_loop(true, Some(10.0), Some(20.0), true, Some(-5.0))
             .unwrap();
         assert_eq!(player.position(), Some(10.0));
+    }
+
+    #[test]
+    fn setting_loop_keeps_a_position_inside_the_loop() {
+        let mut player = opened(Some(10.0));
+        player.seek(6.0).unwrap();
+        player
+            .set_loop(true, Some(5.0), Some(8.0), true, Some(2.0))
+            .unwrap();
+        assert_eq!(player.position(), Some(6.0));
     }
 
     #[test]

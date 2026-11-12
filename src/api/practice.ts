@@ -85,6 +85,8 @@ export interface PracticeAnalysis {
   confidence: number;
   beats: number[];
   downbeats: number[];
+  beatConfidence: number[];
+  downbeatConfidence: number[];
   beatsPerBar: number;
   barOffset: number;
   model: string;

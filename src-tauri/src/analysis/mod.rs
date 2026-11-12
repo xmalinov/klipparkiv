@@ -260,7 +260,7 @@ fn run_job_inner(
         },
     )?;
 
-    let summary = bpm::summarize(&run.beats, &run.downbeats);
+    let summary = bpm::summarize(&run.beats, &run.downbeats, &run.downbeat_confidence);
     let analysis = PracticeAnalysis {
         version: ANALYSIS_VERSION,
         path: original_path.to_string(),
@@ -271,6 +271,8 @@ fn run_job_inner(
         confidence: summary.confidence,
         beats: run.beats.into_iter().map(f64::from).collect(),
         downbeats: run.downbeats.into_iter().map(f64::from).collect(),
+        beat_confidence: run.beat_confidence,
+        downbeat_confidence: run.downbeat_confidence,
         beats_per_bar: summary.beats_per_bar,
         bar_offset: summary.bar_offset,
         model: cache::MODEL_ID.to_string(),

@@ -22,14 +22,18 @@ import {
   xToTime as mapXToTime,
   zoomViewRange,
 } from "./waveformMath";
+import { lowerBound } from "./gridMath";
+
+const CLICK_SLOP_PX = 4;
 
 type DragState =
-  | { kind: "create"; anchor: number; current: number }
+  | { kind: "create"; anchor: number; current: number; originX: number }
   | {
       kind: "selection-move";
       anchor: number;
       start: number;
       end: number;
+      originX: number;
     }
   | { kind: "selection-start"; fixed: number }
   | { kind: "selection-end"; fixed: number }
@@ -129,8 +133,10 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     const canvas = canvasRef.current;
     if (!canvas || width <= 0) return;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
+    const pixelWidth = Math.floor(width * dpr);
+    const pixelHeight = Math.floor(height * dpr);
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
     const context = canvas.getContext("2d");
     if (!context) return;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -180,28 +186,48 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     }
 
     if (grid) {
+      const firstBeat = lowerBound(grid.beats, view.start - 0.001);
       context.lineWidth = 1;
-      for (const beat of grid.beats) {
-        if (beat < view.start - 0.001 || beat > view.end + 0.001) continue;
-        const x = timeToX(beat);
-        context.strokeStyle = "rgba(120, 170, 255, 0.16)";
-        context.beginPath();
+      context.strokeStyle = "rgba(120, 170, 255, 0.16)";
+      context.beginPath();
+      for (
+        let index = firstBeat;
+        index < grid.beats.length && grid.beats[index] <= view.end + 0.001;
+        index += 1
+      ) {
+        const x = timeToX(grid.beats[index]);
         context.moveTo(x, 0);
         context.lineTo(x, height);
-        context.stroke();
       }
-      context.font = "10px sans-serif";
-      for (let index = 0; index < grid.barStarts.length; index += 1) {
-        const bar = grid.barStarts[index];
-        if (bar < view.start - 0.001 || bar > view.end + 0.001) continue;
-        const x = timeToX(bar);
-        context.strokeStyle = "rgba(120, 170, 255, 0.38)";
-        context.beginPath();
+      context.stroke();
+
+      const firstBar = lowerBound(grid.barStarts, view.start - 0.001);
+      context.lineWidth = 2;
+      context.strokeStyle = "rgba(120, 170, 255, 0.55)";
+      context.beginPath();
+      for (
+        let index = firstBar;
+        index < grid.barStarts.length && grid.barStarts[index] <= view.end + 0.001;
+        index += 1
+      ) {
+        const x = timeToX(grid.barStarts[index]);
         context.moveTo(x, 0);
         context.lineTo(x, height);
-        context.stroke();
-        context.fillStyle = "rgba(160, 190, 240, 0.65)";
+      }
+      context.stroke();
+
+      context.font = "10px sans-serif";
+      context.fillStyle = "rgba(160, 190, 240, 0.65)";
+      let lastLabelX = Number.NEGATIVE_INFINITY;
+      for (
+        let index = firstBar;
+        index < grid.barStarts.length && grid.barStarts[index] <= view.end + 0.001;
+        index += 1
+      ) {
+        const x = timeToX(grid.barStarts[index]);
+        if (x - lastLabelX < 24) continue;
         context.fillText(String(index + 1), x + 3, height - 18);
+        lastLabelX = x;
       }
     }
 
@@ -240,16 +266,6 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       }
     }
 
-    const playhead = timeToX(snapshot.positionSecs);
-    if (playhead >= 0 && playhead <= width) {
-      context.strokeStyle = "#ff8a4f";
-      context.lineWidth = 1.5;
-      context.beginPath();
-      context.moveTo(playhead, 0);
-      context.lineTo(playhead, height);
-      context.stroke();
-    }
-
     context.font = "10px sans-serif";
     context.fillStyle = "rgba(200, 210, 225, 0.65)";
     const ticks = 8;
@@ -268,7 +284,6 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     peaks,
     regionPreview,
     selection,
-    snapshot.positionSecs,
     state.regions,
     timeToX,
     grid,
@@ -277,6 +292,34 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     waveform?.durationSecs,
     duration,
     width,
+  ]);
+
+  // React delegates wheel listeners as passive at the root, so the page
+  // cannot be stopped from scrolling there. Use a native non-passive listener.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const bounds = canvas.getBoundingClientRect();
+      const center = xToTime(event.clientX - bounds.left);
+      if (event.shiftKey) {
+        const delta = (event.deltaY / Math.max(1, width)) * viewDuration;
+        clampView(view.start + delta, view.end + delta);
+      } else {
+        zoomAt(event.deltaY > 0 ? 1.25 : 0.8, center);
+      }
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [
+    clampView,
+    view.start,
+    view.end,
+    viewDuration,
+    width,
+    xToTime,
+    zoomAt,
   ]);
 
   const total = Math.max(0.1, duration || 0.1);
@@ -321,6 +364,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
         anchor: time,
         start: selection.start,
         end: selection.end,
+        originX: event.clientX,
       };
       setCursor("grabbing");
       return;
@@ -354,7 +398,12 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { kind: "create", anchor: snapped, current: snapped };
+    dragRef.current = {
+      kind: "create",
+      anchor: snapped,
+      current: snapped,
+      originX: event.clientX,
+    };
     setSelection(null);
     setCursor("crosshair");
   }
@@ -434,7 +483,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
       : snapTime(time);
 
     if (drag.kind === "create") {
-      if (Math.abs(time - drag.anchor) < 0.05) {
+      if (Math.abs(event.clientX - drag.originX) < CLICK_SLOP_PX) {
         setSelection(null);
         seek(Math.max(0, Math.min(total, time)));
       }
@@ -442,7 +491,7 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     }
 
     if (drag.kind === "selection-move") {
-      if (Math.abs(time - drag.anchor) < 0.01) {
+      if (Math.abs(event.clientX - drag.originX) < CLICK_SLOP_PX) {
         seek(Math.max(0, Math.min(total, time)));
       }
       return;
@@ -472,18 +521,6 @@ export default function Waveform({ height = 190 }: { height?: number }) {
     if (region) loopRegion(region.id);
   }
 
-  function wheel(event: React.WheelEvent<HTMLCanvasElement>) {
-    event.preventDefault();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const center = xToTime(event.clientX - bounds.left);
-    if (event.shiftKey) {
-      const delta = (event.deltaY / Math.max(1, width)) * viewDuration;
-      clampView(view.start + delta, view.end + delta);
-    } else {
-      zoomAt(event.deltaY > 0 ? 1.25 : 0.8, center);
-    }
-  }
-
   return (
     <div className="waveform-wrap">
       <canvas
@@ -499,7 +536,19 @@ export default function Waveform({ height = 190 }: { height?: number }) {
           setRegionPreview(null);
         }}
         onDoubleClick={doubleClick}
-        onWheel={wheel}
+      />
+      <div
+        className="waveform-playhead"
+        data-testid="waveform-playhead"
+        aria-hidden="true"
+        style={{
+          transform: `translateX(${timeToX(snapshot.positionSecs)}px)`,
+          opacity:
+            snapshot.positionSecs >= view.start &&
+            snapshot.positionSecs <= view.end
+              ? 1
+              : 0,
+        }}
       />
       {waveformLoading && (
         <div className="waveform-overlay">

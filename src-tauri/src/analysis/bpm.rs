@@ -11,9 +11,9 @@ pub struct BpmSummary {
     pub bar_offset: u8,
 }
 
-const ALLOWED_METERS: [u8; 5] = [2, 3, 4, 6, 8];
+const ALLOWED_METERS: [u8; 11] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-pub fn summarize(beats: &[f32], downbeats: &[f32]) -> BpmSummary {
+pub fn summarize(beats: &[f32], downbeats: &[f32], downbeat_confidence: &[f32]) -> BpmSummary {
     let beats: Vec<f64> = beats
         .iter()
         .copied()
@@ -32,8 +32,8 @@ pub fn summarize(beats: &[f32], downbeats: &[f32]) -> BpmSummary {
     let raw = if median > 0.0 { 60.0 / median } else { 0.0 };
     let (octave, suggested) = octave_correction(raw);
     let confidence = confidence(&intervals);
-    let beats_per_bar = suggest_meter(&beats, &downbeats);
-    let bar_offset = suggest_bar_offset(&beats, &downbeats, beats_per_bar);
+    let beats_per_bar = suggest_meter(&beats, &downbeats, downbeat_confidence);
+    let bar_offset = suggest_bar_offset(&beats, &downbeats, downbeat_confidence, beats_per_bar);
 
     BpmSummary {
         raw,
@@ -100,40 +100,88 @@ fn confidence(intervals: &[f64]) -> f64 {
     (1.0 - 3.0 * mad / center).clamp(0.0, 1.0)
 }
 
-fn suggest_meter(beats: &[f64], downbeats: &[f64]) -> u8 {
-    if beats.len() < 2 || downbeats.len() < 2 {
+fn downbeat_weight(confidence: &[f32], index: usize) -> f64 {
+    confidence
+        .get(index)
+        .copied()
+        .filter(|value| value.is_finite())
+        .map(|value| f64::from(value).clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
+fn suggest_meter(beats: &[f64], downbeats: &[f64], confidence: &[f32]) -> u8 {
+    if beats.len() < 2 || downbeats.len() < 3 {
         return 4;
     }
     let indices: Vec<usize> = downbeats
         .iter()
         .map(|time| nearest_index(beats, *time))
         .collect();
-    let gaps: Vec<f64> = indices
-        .windows(2)
-        .map(|pair| (pair[1] as f64 - pair[0] as f64).abs())
-        .filter(|gap| *gap >= 1.0 && *gap <= 16.0)
-        .collect();
-    let Some(gap) = median(&gaps) else {
-        return 4;
-    };
-    ALLOWED_METERS
-        .into_iter()
-        .min_by(|left, right| {
-            (*left as f64 - gap)
-                .abs()
-                .total_cmp(&(*right as f64 - gap).abs())
-        })
-        .unwrap_or(4)
+
+    let mut best_meter = 4;
+    let mut best_score = 0.0f64;
+    for meter in ALLOWED_METERS {
+        let unit = f64::from(meter);
+        let mut score = 0.0f64;
+        for (pair_index, pair) in indices.windows(2).enumerate() {
+            let gap = (pair[1] as f64 - pair[0] as f64).abs();
+            if !(2.0..=16.0).contains(&gap) {
+                // A one-beat gap is usually a false downbeat; it should not
+                // vote for a 2/4 meter.
+                continue;
+            }
+            let weight = (downbeat_weight(confidence, pair_index)
+                + downbeat_weight(confidence, pair_index + 1))
+                / 2.0;
+            if weight <= 0.0 {
+                continue;
+            }
+            if (gap - unit).abs() < 0.5 {
+                score += weight;
+            } else if gap > unit {
+                let bars = (gap / unit).round();
+                if bars >= 2.0 && (gap - bars * unit).abs() < 0.5 {
+                    score += weight / bars;
+                }
+            }
+        }
+        // Prefer the simpler meter when two explanations are close.
+        score -= 0.01 * unit;
+        if score > best_score + 1e-9 {
+            best_score = score;
+            best_meter = meter;
+        }
+    }
+    best_meter
 }
 
-fn suggest_bar_offset(beats: &[f64], downbeats: &[f64], beats_per_bar: u8) -> u8 {
+fn suggest_bar_offset(
+    beats: &[f64],
+    downbeats: &[f64],
+    confidence: &[f32],
+    beats_per_bar: u8,
+) -> u8 {
     if beats.is_empty() || downbeats.is_empty() || beats_per_bar == 0 {
         return 0;
     }
-    let first_beat = nearest_index(beats, beats[0]);
-    let first_downbeat = nearest_index(beats, downbeats[0]);
-    let offset = first_downbeat.saturating_sub(first_beat);
-    (offset % beats_per_bar as usize) as u8
+    let meter = beats_per_bar as usize;
+    let mut weights = vec![0.0f64; meter];
+    for (index, time) in downbeats.iter().enumerate() {
+        let weight = downbeat_weight(confidence, index);
+        if weight <= 0.0 {
+            continue;
+        }
+        let beat = nearest_index(beats, *time);
+        weights[beat % meter] += weight;
+    }
+
+    let mut best = 0usize;
+    for offset in 1..meter {
+        if weights[offset] > weights[best] + 1e-9 {
+            best = offset;
+        }
+    }
+    best as u8
 }
 
 fn nearest_index(beats: &[f64], time: f64) -> usize {
@@ -163,7 +211,7 @@ mod tests {
     #[test]
     fn half_time_is_doubled() {
         let beats: Vec<f32> = (0..32).map(|index| index as f32 * 0.86).collect();
-        let summary = summarize(&beats, &[]);
+        let summary = summarize(&beats, &[], &[]);
         assert!((summary.raw - 69.77).abs() < 0.1);
         assert_eq!(summary.octave, 2.0);
         assert!((summary.suggested - 139.53).abs() < 0.2);
@@ -172,7 +220,7 @@ mod tests {
     #[test]
     fn normal_tempo_is_kept() {
         let beats: Vec<f32> = (0..32).map(|index| index as f32 * 0.5).collect();
-        let summary = summarize(&beats, &[]);
+        let summary = summarize(&beats, &[], &[]);
         assert_eq!(summary.octave, 1.0);
         assert!((summary.suggested - 120.0).abs() < 0.01);
     }
@@ -181,14 +229,100 @@ mod tests {
     fn meter_comes_from_downbeat_spacing() {
         let beats: Vec<f32> = (0..24).map(|index| index as f32 * 0.5).collect();
         let downbeats = vec![0.0, 2.0, 4.0, 6.0, 8.0, 10.0];
-        let summary = summarize(&beats, &downbeats);
+        let summary = summarize(&beats, &downbeats, &[]);
         assert_eq!(summary.beats_per_bar, 4);
         assert_eq!(summary.bar_offset, 0);
     }
 
     #[test]
+    fn meter_detects_three_and_seven() {
+        let beats: Vec<f32> = (0..35).map(|index| index as f32 * 0.5).collect();
+        let waltz = vec![0.0, 1.5, 3.0, 4.5, 6.0, 7.5, 9.0];
+        assert_eq!(summarize(&beats, &waltz, &[]).beats_per_bar, 3);
+
+        let seven = vec![0.0, 3.5, 7.0, 10.5, 14.0];
+        assert_eq!(summarize(&beats, &seven, &[]).beats_per_bar, 7);
+    }
+
+    #[test]
+    fn meter_ignores_one_beat_false_downbeats() {
+        let beats: Vec<f32> = (0..32).map(|index| index as f32 * 0.5).collect();
+        // Mostly 4-beat bars with a few spurious downbeats one beat later.
+        let downbeats = vec![0.0, 0.5, 2.0, 2.5, 4.0, 6.0, 8.0, 10.0];
+        let summary = summarize(&beats, &downbeats, &[]);
+        assert_eq!(summary.beats_per_bar, 4);
+        assert_eq!(summary.bar_offset, 0);
+    }
+
+    #[test]
+    fn phase_vote_ignores_a_weak_first_downbeat() {
+        let beats: Vec<f32> = (0..20).map(|index| index as f32 * 0.5).collect();
+        let downbeats = vec![0.5, 2.0, 4.0, 6.0, 8.0];
+        let confidence = vec![0.05, 0.9, 0.9, 0.9, 0.9];
+        let summary = summarize(&beats, &downbeats, &confidence);
+        // Beat indices are 1, 4, 8, 12, 16; the strong votes are all mod 4 == 0.
+        assert_eq!(summary.beats_per_bar, 4);
+        assert_eq!(summary.bar_offset, 0);
+    }
+
+    #[test]
+    fn confidence_can_change_the_detected_meter() {
+        let beats: Vec<f32> = (0..32).map(|index| index as f32 * 0.5).collect();
+        let downbeats = vec![0.0, 2.0, 4.0, 5.5, 7.0, 8.5, 10.0, 11.5];
+        let confidence = vec![0.1, 0.1, 0.1, 0.9, 0.9, 0.9, 0.9, 0.9];
+        assert_eq!(summarize(&beats, &downbeats, &confidence).beats_per_bar, 3);
+    }
+
+    #[test]
+    fn random_inputs_keep_the_summary_invariants() {
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((state >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+
+        for _ in 0..100 {
+            let count = 40 + (next() * 200.0) as usize;
+            let mut beats: Vec<f32> = Vec::with_capacity(count);
+            let mut time = 0.0f64;
+            for _ in 0..count {
+                beats.push(time as f32);
+                time += 0.25 + next() * 0.6;
+            }
+
+            let mut downbeats: Vec<f32> = Vec::new();
+            let mut confidence: Vec<f32> = Vec::new();
+            let mut index = 0usize;
+            while index < beats.len() {
+                downbeats.push(beats[index]);
+                confidence.push(next() as f32);
+                index += if next() < 0.15 {
+                    1
+                } else {
+                    2 + (next() * 6.0) as usize
+                };
+                if next() < 0.1 && index < beats.len() {
+                    downbeats.push(beats[index]);
+                    confidence.push((next() * 0.4) as f32);
+                    index += 1;
+                }
+            }
+
+            let summary = summarize(&beats, &downbeats, &confidence);
+            assert!(ALLOWED_METERS.contains(&summary.beats_per_bar));
+            assert!(summary.bar_offset < summary.beats_per_bar);
+            assert!(summary.raw.is_finite());
+            assert!(summary.suggested.is_finite());
+            assert!(summary.octave.is_finite());
+            assert!((0.0..=1.0).contains(&summary.confidence));
+        }
+    }
+
+    #[test]
     fn empty_input_is_safe() {
-        let summary = summarize(&[], &[]);
+        let summary = summarize(&[], &[], &[]);
         assert_eq!(summary.raw, 0.0);
         assert_eq!(summary.suggested, 0.0);
         assert_eq!(summary.beats_per_bar, 4);

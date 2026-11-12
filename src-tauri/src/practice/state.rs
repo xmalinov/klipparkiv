@@ -289,6 +289,27 @@ mod tests {
     }
 
     #[test]
+    fn preserves_extended_meters_and_wraps_the_offset() {
+        let mut state = PracticeState {
+            beats_per_bar: 7,
+            bar_offset: 9,
+            ..Default::default()
+        };
+        state.sanitize();
+        assert_eq!(state.beats_per_bar, 7);
+        assert_eq!(state.bar_offset, 2);
+
+        let mut state = PracticeState {
+            beats_per_bar: 99,
+            bar_offset: 3,
+            ..Default::default()
+        };
+        state.sanitize();
+        assert_eq!(state.beats_per_bar, 16);
+        assert_eq!(state.bar_offset, 3);
+    }
+
+    #[test]
     fn roundtrips_state() {
         let state = PracticeState {
             position_secs: 12.5,

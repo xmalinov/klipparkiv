@@ -90,6 +90,8 @@ function setup({
   const setBpmScale = vi.fn();
   const setBeatsPerBar = vi.fn();
   const setBarOffset = vi.fn();
+  const setAutoBars = vi.fn();
+  const setBarOneAtPlayhead = vi.fn();
   const setSnapMode = vi.fn();
   const setMetronome = vi.fn();
   const setCountIn = vi.fn();
@@ -169,6 +171,8 @@ function setup({
     setBpmScale,
     setBeatsPerBar,
     setBarOffset,
+    setAutoBars,
+    setBarOneAtPlayhead,
     setSnapMode,
     setMetronome,
     setCountIn,
@@ -190,6 +194,8 @@ function setup({
     setBpmScale,
     setBeatsPerBar,
     setBarOffset,
+    setAutoBars,
+    setBarOneAtPlayhead,
     setSnapMode,
     setMetronome,
     setCountIn,
@@ -428,6 +434,8 @@ describe("PracticeScreen", () => {
       barStarts: [0, 2],
       beatsPerBar: 4,
       barOffset: 0,
+      pickupUntil: null,
+      confidence: 1,
     };
     const { loopBars, setMetronome, setCountIn } = setup({ grid });
 
@@ -445,20 +453,55 @@ describe("PracticeScreen", () => {
   });
 
   it("changes the tempo scale, meter and snap mode", async () => {
-    const { setBpmScale, setBeatsPerBar, setSnapMode } = setup();
+    const { setBpmScale, setBeatsPerBar, setAutoBars, setSnapMode } = setup();
 
     await userEvent.click(screen.getByRole("button", { name: "÷2" }));
     expect(setBpmScale).toHaveBeenCalledWith(0.5);
     await userEvent.click(screen.getByRole("button", { name: "×2" }));
     expect(setBpmScale).toHaveBeenCalledWith(2);
 
-    fireEvent.change(screen.getByLabelText("Доли"), { target: { value: "3" } });
-    expect(setBeatsPerBar).toHaveBeenCalledWith(3);
+    const meter = screen.getByLabelText("Доли");
+    expect(within(meter).getByRole("option", { name: "5" })).toBeInTheDocument();
+    expect(within(meter).getByRole("option", { name: "7" })).toBeInTheDocument();
+    expect(within(meter).getByRole("option", { name: "16" })).toBeInTheDocument();
+    fireEvent.change(meter, { target: { value: "7" } });
+    expect(setBeatsPerBar).toHaveBeenCalledWith(7);
+
+    fireEvent.change(meter, { target: { value: "0" } });
+    expect(setAutoBars).toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Привязка"), {
       target: { value: "bar" },
     });
     expect(setSnapMode).toHaveBeenCalledWith("bar");
+  });
+
+  it("shows automatic bars without a numeric offset", () => {
+    const grid = {
+      bpm: 120,
+      beats: [0, 1, 2, 3],
+      downbeats: [0],
+      barStarts: [0, 2],
+      beatsPerBar: 4,
+      barOffset: 0,
+      pickupUntil: null,
+      confidence: 0.42,
+    };
+    setup({ grid });
+
+    expect(screen.getByLabelText("Доли")).toHaveValue("0");
+    expect(screen.getByText("—", { selector: ".grid-value" })).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Уверенность сетки: 42%"),
+    ).toBeInTheDocument();
+  });
+
+  it("sets bar 1 at the playhead", async () => {
+    const { setBarOneAtPlayhead } = setup();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Бар 1 здесь" }),
+    );
+    expect(setBarOneAtPlayhead).toHaveBeenCalled();
   });
 
   it("shifts the bar start and shows the scaled BPM", async () => {

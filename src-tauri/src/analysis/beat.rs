@@ -9,11 +9,52 @@ use crate::analysis::models::ModelPaths;
 
 const SAMPLE_RATE: u32 = 22_050;
 const READ_BUFFER: usize = 64 * 1024;
+const MODEL_FPS: f32 = 50.0;
 
 #[derive(Debug)]
 pub struct BeatRun {
     pub beats: Vec<f32>,
     pub downbeats: Vec<f32>,
+    pub beat_confidence: Vec<f32>,
+    pub downbeat_confidence: Vec<f32>,
+}
+
+fn sigmoid(value: f32) -> f32 {
+    if value.is_finite() {
+        1.0 / (1.0 + (-value).exp())
+    } else {
+        0.0
+    }
+}
+
+/// Confidence of a predicted event: the strongest logit within `radius` frames
+/// of its timestamp, squashed to 0.0–1.0. The model emits logits at 50 fps.
+fn peak_confidence(logits: &[f32], time: f32, radius: isize) -> f32 {
+    if logits.is_empty() || !time.is_finite() || time < 0.0 {
+        return 0.0;
+    }
+    let center = (time * MODEL_FPS).round();
+    if !center.is_finite() {
+        return 0.0;
+    }
+    let center = center as isize;
+    let start = (center - radius).max(0);
+    let end = (center + radius).min(logits.len() as isize - 1);
+    if start > end {
+        return 0.0;
+    }
+    let mut best = f32::NEG_INFINITY;
+    for index in start..=end {
+        let value = logits[index as usize];
+        if value.is_finite() && value > best {
+            best = value;
+        }
+    }
+    if best == f32::NEG_INFINITY {
+        0.0
+    } else {
+        sigmoid(best)
+    }
 }
 
 /// Expected PCM size for a known duration; `None` when the duration is unusable.
@@ -135,9 +176,22 @@ pub fn analyze(
     }
     progress(0.95);
 
+    let beat_confidence = analysis
+        .beats
+        .iter()
+        .map(|time| peak_confidence(&analysis.beat_logits, *time, 1))
+        .collect();
+    let downbeat_confidence = analysis
+        .downbeats
+        .iter()
+        .map(|time| peak_confidence(&analysis.downbeat_logits, *time, 8))
+        .collect();
+
     Ok(BeatRun {
         beats: analysis.beats,
         downbeats: analysis.downbeats,
+        beat_confidence,
+        downbeat_confidence,
     })
 }
 
@@ -211,6 +265,47 @@ mod tests {
         let mut empty = Vec::new();
         assert!(decode_f32le(&mut empty).is_empty());
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn peak_confidence_reads_the_strongest_logit_near_the_timestamp() {
+        let mut logits = vec![-2.0f32; 200];
+        logits[100] = 4.0;
+        let confidence = peak_confidence(&logits, 2.0, 1);
+        assert!(confidence > 0.98);
+        assert!((confidence - 1.0 / (1.0 + (-4.0f32).exp())).abs() < 1e-6);
+
+        // One frame of jitter still finds the peak.
+        let jittered = peak_confidence(&logits, 2.01, 1);
+        assert!(jittered > 0.98);
+    }
+
+    #[test]
+    fn downbeat_confidence_tolerates_snapping_to_a_beat() {
+        let mut logits = vec![-2.0f32; 200];
+        logits[100] = 4.0;
+        // Downbeats are snapped to the nearest beat, up to ~0.16 s away.
+        assert!(peak_confidence(&logits, 2.15, 8) > 0.98);
+    }
+
+    #[test]
+    fn peak_confidence_handles_missing_and_invalid_input() {
+        assert_eq!(peak_confidence(&[], 1.0, 1), 0.0);
+        assert_eq!(peak_confidence(&[1.0], f32::NAN, 1), 0.0);
+        assert_eq!(peak_confidence(&[1.0], -1.0, 1), 0.0);
+        assert_eq!(peak_confidence(&[1.0], 10.0, 1), 0.0);
+
+        let mut logits = vec![0.0f32; 3];
+        logits[1] = f32::NAN;
+        assert_eq!(peak_confidence(&logits, 0.02, 1), sigmoid(0.0));
+    }
+
+    #[test]
+    fn peak_confidence_keeps_negative_logits_below_half() {
+        let logits = vec![-1.0f32; 10];
+        let confidence = peak_confidence(&logits, 0.1, 1);
+        assert!(confidence < 0.5);
+        assert!(confidence > 0.0);
     }
 
     #[test]

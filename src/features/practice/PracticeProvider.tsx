@@ -44,6 +44,12 @@ import {
   type SnapMode,
   type Waveform,
 } from "../../api/practice";
+import {
+  autoBarStarts,
+  fixedBarStarts,
+  nearestBeatIndex,
+  type BarPlan,
+} from "./gridMath";
 
 export const REGION_COLORS: Record<RegionKind, string> = {
   intro: "#8b9bb4",
@@ -79,6 +85,8 @@ export interface PracticeGrid {
   barStarts: number[];
   beatsPerBar: number;
   barOffset: number;
+  pickupUntil: number | null;
+  confidence: number;
 }
 
 interface PracticeContextValue {
@@ -127,6 +135,8 @@ interface PracticeContextValue {
   setBpmScale: (scale: number) => Promise<void>;
   setBeatsPerBar: (beats: number) => Promise<void>;
   setBarOffset: (offset: number) => Promise<void>;
+  setAutoBars: () => Promise<void>;
+  setBarOneAtPlayhead: () => Promise<void>;
   setSnapMode: (mode: SnapMode) => Promise<void>;
   setMetronome: (enabled: boolean, volume?: number) => Promise<void>;
   setCountIn: (enabled: boolean) => Promise<void>;
@@ -194,15 +204,7 @@ export function buildBarStarts(
   beatsPerBar: number,
   barOffset: number,
 ): number[] {
-  if (beats.length === 0) return [];
-  const bar = Math.max(1, Math.min(16, Math.round(beatsPerBar)));
-  const offset = Math.max(0, Math.min(bar - 1, Math.round(barOffset)));
-  const starts: number[] = [];
-  if (offset > 0) starts.push(0);
-  for (let index = offset; index < beats.length; index += bar) {
-    starts.push(beats[index]);
-  }
-  return starts.length > 0 ? starts : [beats[0]];
+  return fixedBarStarts(beats, beatsPerBar, barOffset).barStarts;
 }
 
 export function buildGrid(
@@ -212,9 +214,12 @@ export function buildGrid(
   bpmScale: number,
   beatsPerBar: number,
   barOffset: number,
+  manualGrid = false,
 ): PracticeGrid | null {
   let sourceBeats: number[] = [];
   let sourceBpm = 0;
+  let autoPlan: BarPlan | null = null;
+
   if (manualBpm && manualBpm > 0 && duration > 0) {
     const interval = 60 / manualBpm;
     const count = Math.ceil(duration / interval) + 1;
@@ -223,18 +228,48 @@ export function buildGrid(
   } else if (analysis && analysis.beats.length >= 2 && analysis.bpm > 0) {
     sourceBeats = analysis.beats;
     sourceBpm = analysis.bpm;
+    if (!manualGrid && bpmScale === 1) {
+      autoPlan = autoBarStarts(
+        analysis.beats,
+        analysis.downbeats,
+        analysis.downbeatConfidence ?? [],
+      );
+    }
   }
   if (sourceBeats.length < 2) return null;
+
   const beats = scaleBeats(sourceBeats, bpmScale);
   if (beats.length < 2) return null;
-  const barStarts = buildBarStarts(beats, beatsPerBar, barOffset);
+
+  const effectiveMeter =
+    manualBpm || manualGrid
+      ? beatsPerBar
+      : (analysis?.beatsPerBar || beatsPerBar);
+  const effectiveOffset =
+    manualBpm || manualGrid ? barOffset : (analysis?.barOffset ?? barOffset);
+  const scaledOffset = Math.round(effectiveOffset * bpmScale);
+
+  let plan = autoPlan;
+  if (!plan || plan.barStarts.length < 2) {
+    plan = fixedBarStarts(beats, effectiveMeter, scaledOffset);
+  }
+  if (plan.barStarts.length === 0) return null;
+
+  const outputMeter = plan.meter || effectiveMeter;
+  const outputOffset =
+    outputMeter > 0
+      ? ((effectiveOffset % outputMeter) + outputMeter) % outputMeter
+      : 0;
+
   return {
     bpm: sourceBpm * bpmScale,
     beats,
-    downbeats: barStarts,
-    barStarts,
-    beatsPerBar,
-    barOffset,
+    downbeats: plan.barStarts,
+    barStarts: plan.barStarts,
+    beatsPerBar: outputMeter,
+    barOffset: outputOffset,
+    pickupUntil: plan.pickupUntil,
+    confidence: plan.confidence,
   };
 }
 
@@ -278,6 +313,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
             state.bpmScale,
             state.beatsPerBar,
             state.barOffset,
+            state.gridCustomized,
           )
         : null,
     [
@@ -286,6 +322,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       state.barOffset,
       state.beatsPerBar,
       state.bpmScale,
+      state.gridCustomized,
       state.gridEnabled,
       state.manualBpm,
     ],
@@ -347,7 +384,15 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     let unlisten: (() => void) | undefined;
     onPracticePosition((next) => {
       positionRef.current = next.positionSecs;
-      setSnapshot(next);
+      setSnapshot((current) =>
+        current.positionSecs === next.positionSecs &&
+        current.durationSecs === next.durationSecs &&
+        current.playing === next.playing &&
+        current.ended === next.ended &&
+        current.underruns === next.underruns
+          ? current
+          : next,
+      );
     }).then((fn) => {
       unlisten = fn;
     });
@@ -556,6 +601,27 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
 
   const seek = useCallback(async (position: number) => {
     try {
+      const current = stateRef.current;
+      const active =
+        current.regions.find(
+          (region) => region.id === current.activeRegionId,
+        ) ?? null;
+      const outsideLoop =
+        current.loopEnabled &&
+        active !== null &&
+        (position < active.start || position > active.end);
+      if (outsideLoop) {
+        // The audio engine cannot play outside an active loop, so leaving the
+        // loop is the only way to put the playhead where the user clicked.
+        await practiceSetLoop(
+          false,
+          null,
+          null,
+          current.preRoll,
+          current.preRollSecs,
+        );
+        setState((state) => ({ ...state, loopEnabled: false }));
+      }
       await practiceSeek(position);
       positionRef.current = position;
       setSnapshot((current) => ({ ...current, positionSecs: position }));
@@ -614,6 +680,29 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       barOffset:
         ((Math.round(offset) % current.beatsPerBar) + current.beatsPerBar) %
         current.beatsPerBar,
+      gridCustomized: true,
+    }));
+  }, []);
+
+  const setAutoBars = useCallback(async () => {
+    const next = analysisRef.current;
+    setState((current) => ({
+      ...current,
+      gridCustomized: false,
+      manualBpm: null,
+      beatsPerBar: next?.beatsPerBar || current.beatsPerBar,
+      barOffset: next?.barOffset ?? 0,
+    }));
+  }, []);
+
+  const setBarOneAtPlayhead = useCallback(async () => {
+    const beats = gridRef.current?.beats ?? [];
+    const index = nearestBeatIndex(beats, positionRef.current);
+    if (index === null) return;
+    const meter = stateRef.current.beatsPerBar;
+    setState((current) => ({
+      ...current,
+      barOffset: index % meter,
       gridCustomized: true,
     }));
   }, []);
@@ -737,12 +826,13 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
   const selectRegion = useCallback(
     async (id: string) => {
       const region = state.regions.find((entry) => entry.id === id) ?? null;
+      const alreadyActive = state.activeRegionId === id;
       setState((current) => ({ ...current, activeRegionId: id }));
-      if (state.loopEnabled && region) {
+      if (!alreadyActive && state.loopEnabled && region) {
         await applyLoop(true, region, state.preRoll);
       }
     },
-    [applyLoop, state.loopEnabled, state.preRoll, state.regions],
+    [applyLoop, state.activeRegionId, state.loopEnabled, state.preRoll, state.regions],
   );
 
   const loopRegion = useCallback(
@@ -1020,6 +1110,8 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       setBpmScale,
       setBeatsPerBar,
       setBarOffset,
+      setAutoBars,
+      setBarOneAtPlayhead,
       setSnapMode,
       setMetronome,
       setCountIn,
@@ -1049,6 +1141,8 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       selectRegionByIndex,
       selection,
       setBarOffset,
+      setAutoBars,
+      setBarOneAtPlayhead,
       setBeatsPerBar,
       setBpmScale,
       setCountIn,

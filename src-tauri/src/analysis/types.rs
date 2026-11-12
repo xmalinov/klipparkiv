@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Version of the analysis result schema. Bump when the cached JSON shape or
 /// the beat model changes in a way that should invalidate old results.
-pub const ANALYSIS_VERSION: u32 = 1;
+pub const ANALYSIS_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +17,10 @@ pub struct PracticeAnalysis {
     pub confidence: f64,
     pub beats: Vec<f64>,
     pub downbeats: Vec<f64>,
+    /// Model confidence for each beat, aligned with `beats` (0.0–1.0).
+    pub beat_confidence: Vec<f32>,
+    /// Model confidence for each downbeat, aligned with `downbeats` (0.0–1.0).
+    pub downbeat_confidence: Vec<f32>,
     pub beats_per_bar: u8,
     pub bar_offset: u8,
     pub model: String,

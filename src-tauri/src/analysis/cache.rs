@@ -41,10 +41,8 @@ pub fn save(dir: &Path, key: &str, analysis: &PracticeAnalysis) -> Result<(), St
 mod tests {
     use super::*;
 
-    #[test]
-    fn roundtrips_analysis() {
-        let dir = tempfile::tempdir().unwrap();
-        let analysis = PracticeAnalysis {
+    fn analysis() -> PracticeAnalysis {
+        PracticeAnalysis {
             version: ANALYSIS_VERSION,
             path: "a.mp3".into(),
             duration_secs: 10.0,
@@ -54,15 +52,41 @@ mod tests {
             confidence: 0.9,
             beats: vec![0.0, 0.5],
             downbeats: vec![0.0],
+            beat_confidence: vec![1.0, 1.0],
+            downbeat_confidence: vec![1.0],
             beats_per_bar: 4,
             bar_offset: 0,
             model: MODEL_ID.into(),
             analyzed_at: 1,
-        };
+        }
+    }
+
+    #[test]
+    fn roundtrips_analysis() {
+        let dir = tempfile::tempdir().unwrap();
+        let analysis = analysis();
         save(dir.path(), "key", &analysis).unwrap();
         let loaded = load(dir.path(), "key").unwrap();
         assert_eq!(loaded.bpm, 120.0);
         assert_eq!(loaded.beats.len(), 2);
+        assert_eq!(loaded.beat_confidence, vec![1.0, 1.0]);
+        assert_eq!(loaded.downbeat_confidence, vec![1.0]);
+    }
+
+    #[test]
+    fn serializes_confidence_fields_in_camel_case() {
+        let text = serde_json::to_string(&analysis()).unwrap();
+        assert!(text.contains("\"beatConfidence\""));
+        assert!(text.contains("\"downbeatConfidence\""));
+    }
+
+    #[test]
+    fn rejects_an_old_analysis_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut analysis = analysis();
+        analysis.version = ANALYSIS_VERSION - 1;
+        save(dir.path(), "key", &analysis).unwrap();
+        assert!(load(dir.path(), "key").is_none());
     }
 
     #[test]

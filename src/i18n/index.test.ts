@@ -80,7 +80,7 @@ describe("i18n", () => {
       expect(screen.getByTestId("text")).toHaveTextContent("Download"),
     );
     expect(probe.api().language).toBe("en");
-    expect(document.documentElement.lang).toBe("en");
+    await waitFor(() => expect(document.documentElement.lang).toBe("en"));
   });
 
   it("switches language at runtime", async () => {
@@ -95,7 +95,7 @@ describe("i18n", () => {
     });
 
     expect(screen.getByTestId("text")).toHaveTextContent("Download");
-    expect(document.documentElement.lang).toBe("en");
+    await waitFor(() => expect(document.documentElement.lang).toBe("en"));
   });
 
   it("keeps Russian when settings fail or hold an unknown language", async () => {

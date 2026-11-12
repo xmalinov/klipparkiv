@@ -58,9 +58,29 @@ const ANALYSIS: PracticeAnalysis = {
   confidence: 0.9,
   beats: [0, 0.5, 1, 1.5],
   downbeats: [0, 2],
+  beatConfidence: [1, 1, 1, 1],
+  downbeatConfidence: [1, 1],
   beatsPerBar: 3,
   barOffset: 1,
   model: "beat-this",
+  analyzedAt: 1,
+};
+
+const IRREGULAR_ANALYSIS: PracticeAnalysis = {
+  version: 2,
+  path: AUDIO.path,
+  durationSecs: 12,
+  bpmRaw: 120,
+  bpm: 120,
+  octave: 1,
+  confidence: 0.8,
+  beats: Array.from({ length: 25 }, (_, index) => index * 0.5),
+  downbeats: [0, 1.5, 3, 4.5, 6, 7.5],
+  beatConfidence: Array.from({ length: 25 }, () => 1),
+  downbeatConfidence: Array.from({ length: 6 }, () => 1),
+  beatsPerBar: 3,
+  barOffset: 0,
+  model: "test",
   analyzedAt: 1,
 };
 
@@ -455,6 +475,50 @@ describe("PracticeProvider", () => {
       });
     });
 
+    it("does not re-apply the loop when the active region is clicked again", async () => {
+      const view = renderPractice();
+      await openTrack(view, { ...withRegions(), loopEnabled: true });
+      router.reset();
+
+      await act(async () => {
+        await view.api().selectRegion("r1");
+      });
+
+      expect(view.api().state.activeRegionId).toBe("r1");
+      expect(router.count("practice_set_loop")).toBe(0);
+    });
+
+    it("leaves the loop when seeking outside the active region", async () => {
+      const view = renderPractice();
+      await openTrack(view, { ...withRegions(), loopEnabled: true });
+      router.reset();
+
+      await act(async () => {
+        await view.api().seek(12);
+      });
+
+      expect(router.args("practice_set_loop")[0]).toMatchObject({
+        enabled: false,
+      });
+      expect(lastCall("practice_seek")).toEqual({ positionSecs: 12 });
+      expect(view.api().state.loopEnabled).toBe(false);
+      expect(view.api().snapshot.positionSecs).toBe(12);
+    });
+
+    it("keeps the loop when seeking inside the active region", async () => {
+      const view = renderPractice();
+      await openTrack(view, { ...withRegions(), loopEnabled: true });
+      router.reset();
+
+      await act(async () => {
+        await view.api().seek(6);
+      });
+
+      expect(router.count("practice_set_loop")).toBe(0);
+      expect(view.api().state.loopEnabled).toBe(true);
+      expect(lastCall("practice_seek")).toEqual({ positionSecs: 6 });
+    });
+
     it("selects a region by its sorted index", async () => {
       const view = renderPractice();
       await openTrack(view, {
@@ -685,6 +749,58 @@ describe("PracticeProvider", () => {
       });
       expect(view.api().state.beatsPerBar).toBe(1);
       expect(view.api().state.barOffset).toBe(0);
+    });
+
+    it("returns to automatic bars and applies the analysis phase", async () => {
+      router.on("practice_analysis_get", () => ANALYSIS);
+      const view = renderPractice();
+      await openTrack(view);
+      expect(view.api().grid).not.toBeNull();
+
+      await act(async () => {
+        await view.api().setBeatsPerBar(7);
+      });
+      expect(view.api().state.gridCustomized).toBe(true);
+
+      await act(async () => {
+        await view.api().setAutoBars();
+      });
+      expect(view.api().state.gridCustomized).toBe(false);
+      expect(view.api().state.manualBpm).toBeNull();
+      expect(view.api().state.beatsPerBar).toBe(3);
+      expect(view.api().state.barOffset).toBe(1);
+    });
+
+    it("snaps and loops with irregular model bars", async () => {
+      router.on("practice_analysis_get", () => IRREGULAR_ANALYSIS);
+      const view = renderPractice();
+      await openTrack(view, { positionSecs: 3.6 });
+
+      expect(view.api().grid?.barStarts).toEqual([0, 1.5, 3, 4.5, 6, 7.5]);
+      expect(view.api().grid?.beatsPerBar).toBe(3);
+      expect(view.api().snapTime(3.6, "bar")).toBe(3);
+
+      await act(async () => {
+        await view.api().loopBars(2);
+      });
+      expect(lastCall("practice_set_loop")).toMatchObject({
+        enabled: true,
+        startSecs: 3,
+        endSecs: 6,
+      });
+    });
+
+    it("sets bar 1 at the playhead using the current meter", async () => {
+      const view = renderPractice();
+      await openTrack(view, { manualBpm: 120, positionSecs: 5 });
+
+      await act(async () => {
+        await view.api().setBarOneAtPlayhead();
+      });
+
+      expect(view.api().state.gridCustomized).toBe(true);
+      // Position 5 s is beat 10 at 120 BPM; 10 % 4 == 2.
+      expect(view.api().state.barOffset).toBe(2);
     });
 
     it("snaps the grid scale to half, single or double beats", async () => {

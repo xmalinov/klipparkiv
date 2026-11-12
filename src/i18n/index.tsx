@@ -292,6 +292,9 @@ export const ru = {
   "practice.gridAnalyze": "Построить сетку",
   "practice.gridUnavailable": "Сетка недоступна",
   "practice.gridAuto": "Сетка авто",
+  "practice.barsAuto": "Такты авто",
+  "practice.barOneHere": "Бар 1 здесь",
+  "practice.gridConfidence": "Уверенность сетки",
 
   "settings.title": "Настройки",
   "settings.tab.general": "Общие",
@@ -625,6 +628,9 @@ export const en: Record<TranslationKey, string> = {
   "practice.gridAnalyze": "Build grid",
   "practice.gridUnavailable": "Grid unavailable",
   "practice.gridAuto": "Auto grid",
+  "practice.barsAuto": "Auto bars",
+  "practice.barOneHere": "Set bar 1 here",
+  "practice.gridConfidence": "Grid confidence",
 
   "settings.title": "Settings",
   "settings.tab.general": "General",

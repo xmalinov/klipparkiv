@@ -10,6 +10,35 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [Unreleased]
+
+#### Added
+
+- Automatic bar lines follow the analysed downbeats, including tempo and meter
+  changes; the meter picker adds 5, 7, 9–16 and an Auto mode.
+- "Set bar 1 here" aligns the manual grid to the playhead.
+- Beat and downbeat confidence from the model is cached with the analysis.
+
+#### Changed
+
+- Grid drawing batches beat and bar lines, redraws only the playhead during
+  playback and no longer reallocates the canvas every frame.
+
+#### Fixed
+
+- Clicking outside the active loop now leaves the loop and seeks to the
+  clicked position instead of jumping to the loop start.
+- Clicking a selected region while a loop is active keeps the playhead at the
+  clicked position instead of jumping to the region start.
+- Clicking the waveform seeks to the clicked position even when beat/bar
+  snapping is on; a click was treated as a tiny drag when it was far from a
+  snap point.
+- The mouse wheel over the waveform zooms instead of scrolling the page.
+- The thick bar line no longer appears at 0 s before the first downbeat; intros
+  and pickups are left without a fake bar.
+- The first bar is chosen by voting over all confident downbeats instead of
+  trusting the first one.
+
 ### [1.7.1] — 2026-11-12
 
 Local media import release.
@@ -259,6 +288,35 @@ First public release.
 - Portable layout: settings and index in `data\`, media in `audio\` and `video\`.
 
 ## Русский
+
+### [Unreleased]
+
+#### Добавлено
+
+- Автоматические линии тактов идут по найденным downbeats, включая смены темпа
+  и размера; в выборе размера появились 5, 7, 9–16 и режим «авто».
+- Кнопка «Бар 1 здесь» выравнивает ручную сетку по плейхеду.
+- Уверенность долей и downbeats из модели сохраняется вместе с анализом.
+
+#### Изменено
+
+- Сетка рисуется двумя пакетами линий, во время воспроизведения
+  перерисовывается только плейхед, а canvas больше не пересоздаётся каждый
+  кадр.
+
+#### Исправлено
+
+- Клик вне активной петли теперь выключает петлю и ставит плейхед в точку
+  клика, а не перебрасывает его в начало петли.
+- Клик по выделенному региону при включённом лупе оставляет плейхед в точке
+  клика, а не перебрасывает его в начало региона.
+- Клик по волне ставит плейхед в точку клика, даже когда включена привязка к
+  долям/тактам; раньше клик далеко от точки привязки считался микроперетаскиванием.
+- Колесо мыши над волной зумит, а не прокручивает страницу.
+- Толстая линия больше не появляется в 0 с перед первой долей; вступление и
+  пикап остаются без фиктивного такта.
+- Первая доля выбирается голосованием по всем уверенным downbeats, а не по
+  первому.
 
 ### [1.7.1] — 2026-11-12
 

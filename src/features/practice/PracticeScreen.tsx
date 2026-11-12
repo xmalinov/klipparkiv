@@ -53,6 +53,8 @@ function GridBar() {
     setBpmScale,
     setBeatsPerBar,
     setBarOffset,
+    setAutoBars,
+    setBarOneAtPlayhead,
     setSnapMode,
     setMetronome,
     setCountIn,
@@ -130,10 +132,15 @@ function GridBar() {
         <span>{t("practice.meter")}</span>
         <select
           className="field"
-          value={state.beatsPerBar}
-          onChange={(event) => setBeatsPerBar(Number(event.currentTarget.value))}
+          value={state.gridCustomized ? state.beatsPerBar : 0}
+          onChange={(event) => {
+            const value = Number(event.currentTarget.value);
+            if (value === 0) setAutoBars();
+            else setBeatsPerBar(value);
+          }}
         >
-          {[2, 3, 4, 6, 8].map((beats) => (
+          <option value={0}>{t("practice.barsAuto")}</option>
+          {Array.from({ length: 15 }, (_, index) => index + 2).map((beats) => (
             <option key={beats} value={beats}>
               {beats}
             </option>
@@ -151,7 +158,9 @@ function GridBar() {
         >
           ‹
         </button>
-        <span className="grid-value">{state.barOffset + 1}</span>
+        <span className="grid-value">
+          {state.gridCustomized ? state.barOffset + 1 : "—"}
+        </span>
         <button
           type="button"
           className="icon-btn"
@@ -159,6 +168,15 @@ function GridBar() {
           aria-label={t("practice.barNext")}
         >
           ›
+        </button>
+        <button
+          type="button"
+          className="chip"
+          onClick={() => setBarOneAtPlayhead()}
+          aria-label={t("practice.barOneHere")}
+          title={t("practice.barOneHere")}
+        >
+          1
         </button>
       </div>
 
@@ -245,8 +263,13 @@ function GridBar() {
           <button type="button" className="chip" onClick={() => startAnalysis()}>
             {t("practice.gridRetry")}
           </button>
-        ) : hasGrid ? (
-          <span className="ok">●</span>
+        ) : grid ? (
+          <span
+            className="ok"
+            title={`${t("practice.gridConfidence")}: ${Math.round(grid.confidence * 100)}%`}
+          >
+            ●
+          </span>
         ) : (
           <button type="button" className="chip" onClick={() => startAnalysis()}>
             {t("practice.gridAnalyze")}
