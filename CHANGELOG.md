@@ -10,7 +10,9 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
-### [Unreleased]
+### [1.8.0] — 2026-11-13
+
+Practice grid and interaction release.
 
 #### Added
 
@@ -289,7 +291,9 @@ First public release.
 
 ## Русский
 
-### [Unreleased]
+### [1.8.0] — 2026-11-13
+
+Релиз сетки практики и взаимодействия с волной.
 
 #### Добавлено
 

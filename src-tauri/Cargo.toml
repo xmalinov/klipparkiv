@@ -1,6 +1,6 @@
 [package]
 name = "klipparkiv"
-version = "1.7.1"
+version = "1.8.0"
 description = "Offline media library for backing tracks and lessons: audio, video, clips and playlists"
 authors = ["Klipparkiv contributors"]
 edition = "2024"

@@ -108,8 +108,9 @@ files and the system player are unchanged.
   copied into `audio/`/`video/`, tags and covers are read, duplicates are skipped;
   the **Add files…** dialog does the same without dragging.
 - **Practice** - audio-only player: 0.25–2.0 speed, ±12 semitones, volume,
-  A-B loops, named regions, BPM/beat grid, bar-snapped loops, metronome and
-  count-in, waveform with zoom, keyboard shortcuts and a mini-player.
+  A-B loops, named regions, BPM and automatic bar grid from analysed downbeats,
+  2–16 beats per bar, bar-snapped loops, metronome and count-in, waveform with
+  zoom, keyboard shortcuts and a mini-player.
 - **App updates** — in-app banner, download verified with a Minisign signature,
   restart on your command.
 - **Update yt-dlp** from the UI.
@@ -361,8 +362,9 @@ for setup and checks. Bundled components keep their own licenses; see
 - **Библиотека** — обложки, поиск, фильтры, сортировка, запуск в Practice или
   системном плеере.
 - **Practice** — плеер только для аудио: скорость 0.25–2.0, ±12 полутонов,
-  громкость, A-B лупы, именованные регионы, BPM и сетка долей, лупы по тактам,
-  метроном и отсчёт, волна с зумом, горячие клавиши и мини-плеер.
+  громкость, A-B лупы, именованные регионы, BPM и автосетка тактов по найденным
+  downbeats, 2–16 долей в такте, лупы по тактам, метроном и отсчёт, волна с
+  зумом, горячие клавиши и мини-плеер.
 - **Обновления приложения** — баннер в окне, загрузка с проверкой подписи
   Minisign, перезапуск по команде.
 - **Обновление yt-dlp** из интерфейса.
