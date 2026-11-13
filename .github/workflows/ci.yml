@@ -68,6 +68,22 @@ jobs:
       - name: Frontend build
         run: npm run build
 
+      # Coverage and the ffmpeg-gated Windows tests need the bundled tools.
+      - name: Download yt-dlp and FFmpeg into bin\
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "bin/yt-dlp.exe"
+          $zip = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zip
+          $dst = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          Expand-Archive $zip -DestinationPath $dst
+          $ffmpeg = Get-ChildItem $dst -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $ffprobe = Get-ChildItem $dst -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          Copy-Item $ffmpeg.FullName "bin/ffmpeg.exe"
+          Copy-Item $ffprobe.FullName "bin/ffprobe.exe"
+
       - name: Rust format
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
