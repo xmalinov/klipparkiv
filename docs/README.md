@@ -16,6 +16,7 @@ and some are out of date.
 - [10. Practice analysis research](10-practice-analysis-research.md)
 - [11. Local media import](11-local-media-import.md)
 - [12. Import 1.7.1 plan and acceptance criteria](12-import-1.7.1-plan.md)
+- [13. Practice grid 1.8.0](13-practice-grid-1.8.0.md)
 - [Cross-platform plan](../CROSS_PLATFORM_PLAN.md)
 
 For installation, supported platforms and the current feature set, use the

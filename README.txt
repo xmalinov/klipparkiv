@@ -14,6 +14,14 @@ How to run
   3. Paste a link to media you own or are allowed to save.
   4. Choose Audio, Video or Clip, pick a folder, then press Download.
 
+Practice player
+  Double-click an audio item, or drop audio into Practice. Audio only: speed
+  0.25-2.0, pitch +-12 semitones, A-B loops, named regions, metronome and
+  count-in. The beat grid follows the analysed downbeats automatically, with
+  2-16 beats per bar and manual correction. Use the mouse wheel over the
+  waveform to zoom; click anywhere on it to move the playhead. Clicking outside
+  an active loop leaves the loop and seeks to the click.
+
 What is inside
   klipparkiv.exe          the application
   klipparkiv-updater.exe  applies downloaded updates on restart
@@ -89,6 +97,14 @@ Security
   3. Вставьте ссылку на медиа, которое вам принадлежит или которое разрешено
      сохранять.
   4. Выберите «Аудио», «Видео» или «Клип», укажите папку и нажмите «Скачать».
+
+Плеер Practice
+  Двойной клик по аудио или перетаскивание аудио в Practice. Только аудио:
+  скорость 0.25-2.0, тон ±12 полутонов, A-B лупы, именованные регионы,
+  метроном и отсчёт. Сетка тактов строится по найденным downbeats, 2-16 долей
+  в такте, с ручной коррекцией. Колесо мыши над волной зумит; клик по волне
+  ставит плейхед в точку клика. Клик вне активной петли выключает петлю и
+  переходит в точку клика.
 
 Что внутри
   klipparkiv.exe          приложение

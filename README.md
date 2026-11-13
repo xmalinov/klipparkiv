@@ -83,8 +83,9 @@ to cut from the start or to the end. For a playlist, choose the whole list or on
 the linked video, optionally with an item range.
 
 Audio files open in the built-in **Practice** player: slow down, change pitch,
-loop a phrase, follow the beat grid and metronome, and mark sections. Video
-files and the system player are unchanged.
+loop a phrase, follow the automatic bar grid and metronome, and mark sections.
+Click the waveform to move the playhead; the mouse wheel zooms. Video files and
+the system player are unchanged.
 
 ### Features
 
@@ -127,7 +128,7 @@ files and the system player are unchanged.
   on every edition; if it is missing, install the
   [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 - macOS 11+ on Intel or Apple Silicon.
-- About 110–115 MB to download and about 253 MB on disk, plus your media.
+- About 115 MB to download and about 253 MB on disk, plus your media.
 - A folder the app can write to.
 
 ### Troubleshooting
@@ -340,8 +341,8 @@ for setup and checks. Bundled components keep their own licenses; see
 весь список или только видео по ссылке, при необходимости с диапазоном.
 
 Аудио открывается во встроенном плеере **Practice**: замедление, смена тона,
-луп фразы, сетка долей и метроном, разметка секций. Видео и системный плеер
-работают как раньше.
+луп фразы, автосетка тактов и метроном, разметка секций. Клик по волне двигает
+плейхед, колесо мыши зумит. Видео и системный плеер работают как раньше.
 
 ### Возможности
 
@@ -382,7 +383,7 @@ for setup and checks. Bundled components keep their own licenses; see
   редакции; если его нет, установите
   [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 - macOS 11+ на Intel или Apple Silicon.
-- Около 110–115 МБ на скачивание и около 253 МБ на диске, плюс ваши медиа.
+- Около 115 МБ на скачивание и около 253 МБ на диске, плюс ваши медиа.
 - Папка с правом записи.
 
 ### Если что-то не работает
