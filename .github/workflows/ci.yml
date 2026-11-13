@@ -53,7 +53,8 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      # cargo-llvm-cov 0.9.1 cannot read Rust 1.100 coverage on Windows.
+      - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: clippy, rustfmt, llvm-tools-preview
 

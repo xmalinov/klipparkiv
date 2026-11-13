@@ -29,7 +29,8 @@ jobs:
       - name: Fetch beat-grid models
         run: npm run models:fetch
 
-      - uses: dtolnay/rust-toolchain@stable
+      # cargo-llvm-cov 0.9.1 cannot read Rust 1.100 coverage on Windows.
+      - uses: dtolnay/rust-toolchain@1.99.1
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -121,7 +122,8 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      # cargo-llvm-cov 0.9.1 cannot read Rust 1.100 coverage on Windows.
+      - uses: dtolnay/rust-toolchain@1.99.1
 
       - uses: Swatinem/rust-cache@v2
         with:

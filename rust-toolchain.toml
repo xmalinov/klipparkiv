@@ -1,3 +1,5 @@
 [toolchain]
-channel = "stable"
+# cargo-llvm-cov 0.9.1 produces no line hits on Rust 1.100.0 (LLVM 21),
+# which breaks the Windows coverage job. Keep 1.99.1 until that is fixed.
+channel = "1.99.1"
 components = ["clippy", "rustfmt", "llvm-tools-preview"]
