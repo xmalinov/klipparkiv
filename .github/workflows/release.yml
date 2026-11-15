@@ -222,7 +222,7 @@ jobs:
         run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
       - name: Build release notes from CHANGELOG
-        run: node scripts/release-notes.mjs "${{ steps.version.outputs.version }}" release/notes.md
+        run: node scripts/release-notes.mjs "${{ steps.version.outputs.version }}" release/notes.md --summary release/summary.txt
 
       - name: Merge update manifest
         run: |
@@ -230,6 +230,7 @@ jobs:
           node scripts/merge-update-manifest.mjs \
             --out release/update.json \
             --version "$VERSION" \
+            --notes "$(cat release/summary.txt)" \
             --require windows-x86_64,darwin-x86_64,darwin-aarch64 \
             release/update-windows.json \
             release/update-macos-x64.json \

@@ -1,33 +1,35 @@
 #!/usr/bin/env node
 // Builds the release body from the bilingual CHANGELOG.md section.
-// Usage: node scripts/release-notes.mjs <version> <out-file>
+// Usage: node scripts/release-notes.mjs <version> <out-file> [--summary <file>]
+//
+// --summary writes the one-line description that `update.json` carries into the
+// in-app update banner. It is short on purpose: the banner renders it as a
+// single line with an ellipsis.
 
 import { readFileSync, writeFileSync } from "node:fs";
 
+import { sectionsFor, summaryFor } from "./lib/changelog.mjs";
 import { isPrerelease } from "./lib/version.mjs";
 
-const [version, out] = process.argv.slice(2);
+function arg(name) {
+  const index = process.argv.indexOf(`--${name}`);
+  return index === -1 ? undefined : process.argv[index + 1];
+}
+
+const positional = process.argv.slice(2).filter((value, index, all) => {
+  if (value.startsWith("--")) return false;
+  return all[index - 1] !== "--summary";
+});
+const [version, out] = positional;
 if (!version || !out) {
-  console.error("usage: node scripts/release-notes.mjs <version> <out-file>");
+  console.error(
+    "usage: node scripts/release-notes.mjs <version> <out-file> [--summary <file>]",
+  );
   process.exit(1);
 }
 
-const lines = readFileSync("CHANGELOG.md", "utf8")
-  .replace(/\r\n/g, "\n")
-  .split("\n");
-const marker = `### [${version}]`;
-const sections = [];
-
-for (let index = 0; index < lines.length; index += 1) {
-  if (!lines[index].startsWith(marker)) continue;
-
-  let end = index + 1;
-  while (end < lines.length && !/^##\s|^###\s/.test(lines[end])) {
-    end += 1;
-  }
-  sections.push(lines.slice(index + 1, end).join("\n").trim());
-}
-
+const changelog = readFileSync("CHANGELOG.md", "utf8");
+const sections = sectionsFor(changelog, version);
 if (sections.length === 0) {
   console.error(`CHANGELOG.md has no "### [${version}]" section`);
   process.exit(1);
@@ -70,3 +72,14 @@ const body = `${banner}${downloads}${notes}`;
 
 writeFileSync(out, `${body}\n`);
 console.log(`release notes for ${version}: ${out} (${body.length} chars)`);
+
+const summaryPath = arg("summary");
+if (summaryPath) {
+  const summary = summaryFor(changelog, version);
+  if (!summary) {
+    console.error(`CHANGELOG.md has no summary paragraph for ${version}`);
+    process.exit(1);
+  }
+  writeFileSync(summaryPath, `${summary}\n`);
+  console.log(`update banner summary: ${summaryPath} (${summary.length} chars)`);
+}

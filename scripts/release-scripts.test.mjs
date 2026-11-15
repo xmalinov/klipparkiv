@@ -96,6 +96,21 @@ describe("release-notes", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('no "### [2.0.0]" section');
   });
+
+  it("writes the one-line update banner summary on request", () => {
+    const root = changelogTree();
+
+    const result = run(
+      "release-notes.mjs",
+      ["1.9.0-beta.1", "notes.md", "--summary", "summary.txt"],
+      root,
+    );
+
+    expect(result.status).toBe(0);
+    const summary = readFileSync(path.join(root, "summary.txt"), "utf8").trim();
+    expect(summary).toBe("Test build notes.");
+    expect(summary).not.toContain("\n");
+  });
 });
 
 describe("merge-update-manifest", () => {
@@ -190,5 +205,30 @@ describe("merge-update-manifest", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("missing platform darwin-x86_64");
+  });
+
+  it("carries the release summary into the manifest notes", () => {
+    const root = tree("1.9.0-beta.1");
+    writeFragments(root, "1.9.0-beta.1");
+
+    const result = run(
+      "merge-update-manifest.mjs",
+      [
+        "--out",
+        "update.json",
+        "--version",
+        "1.9.0-beta.1",
+        "--notes",
+        "Same refactor, macOS build fixed",
+        "windows.json",
+        "mac.json",
+      ],
+      root,
+    );
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(root, "update.json"), "utf8")).notes).toBe(
+      "Same refactor, macOS build fixed",
+    );
   });
 });

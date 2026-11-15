@@ -18,6 +18,10 @@ The first release with the updater is **1.2.0** on Windows. macOS starts at
 Each update asset has a minisign `.sig` file. macOS artifacts also include a
 DMG for the assisted update path.
 
+`update.json` also carries `notes`: the first paragraph of the version's English
+CHANGELOG section, cut to one line. The app shows it in the update banner, so
+keep that paragraph short and user-facing.
+
 ## Release flow
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`:
