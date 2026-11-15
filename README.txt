@@ -1,4 +1,4 @@
-Klipparkiv 1.8.0 - portable build for Windows
+Klipparkiv 1.9.0-beta.1 - portable build for Windows
 ================================================
 
 English

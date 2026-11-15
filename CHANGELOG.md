@@ -10,6 +10,22 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.9.0-beta.1] — 2026-11-15
+
+Test build of the internal refactor. It is published as a prerelease: it is
+not offered through in-app updates, and the stable release stays 1.8.0.
+
+- Commands, library storage, download queue and updater are split into
+  modules; settings and queue state are shared through providers.
+- Backend errors reach the dialog as readable messages instead of a raw
+  string.
+- No feature changes are intended.
+
+Worth trying: start the app on an existing library, switch the language, save
+settings, add and remove downloads, open a track in the practice player, and
+run the update check (it should stay quiet). Please report anything that
+behaves differently from 1.8.0 in the release discussion.
+
 ### [1.8.0] — 2026-11-13
 
 Practice grid and interaction release.
@@ -290,6 +306,21 @@ First public release.
 - Portable layout: settings and index in `data\`, media in `audio\` and `video\`.
 
 ## Русский
+
+### [1.9.0-beta.1] — 2026-11-15
+
+Тестовая сборка внутреннего рефакторинга. Опубликована как prerelease: через
+встроенное обновление не предлагается, стабильной версией остаётся 1.8.0.
+
+- Команды, хранилище библиотеки, очередь загрузок и апдейтер разложены по
+  модулям; настройки и состояние очереди живут в общих провайдерах.
+- Ошибки бэкенда приходят в диалог читаемым текстом, а не сырой строкой.
+- Изменений в функциях не планировалось.
+
+Что стоит проверить: запуск на существующей библиотеке, переключение языка,
+сохранение настроек, добавление и удаление загрузок, открытие трека в плеере
+практики и проверку обновлений (она должна молчать). Если что-то ведёт себя не
+как в 1.8.0 — напишите в обсуждении релиза.
 
 ### [1.8.0] — 2026-11-13
 
