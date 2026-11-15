@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { I18nProvider } from "./i18n";
+import { SettingsProvider } from "./providers/SettingsProvider";
 
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
@@ -35,6 +37,22 @@ const binaries = [
   },
 ];
 
+const queuedTask = {
+  id: "t1",
+  url: "https://youtu.be/abc",
+  title: "Guitar lesson",
+  mode: "audio",
+  clip: false,
+  state: "running",
+  percent: 40,
+  speedBps: null,
+  etaSecs: null,
+  error: null,
+  playlistIndex: null,
+  playlistCount: null,
+  outputPath: null,
+};
+
 const info = {
   root: "C:\\apps\\klipparkiv",
   supportRoot: "C:\\apps\\klipparkiv\\data",
@@ -49,22 +67,30 @@ const info = {
   binaries,
 };
 
-function routeCommands() {
+const storedSettings = {
+  audioSubdir: "audio",
+  videoSubdir: "video",
+  concurrency: 2,
+  theme: "dark",
+  language: "ru",
+  scanDepth: 3,
+  autoscan: true,
+  embedThumbnail: true,
+};
+
+function routeCommands(overrides: Record<string, () => unknown> = {}) {
   invoke.mockImplementation((command: string) => {
+    const override = overrides[command];
+    if (override) return Promise.resolve(override());
     switch (command) {
       case "app_info":
         return Promise.resolve(info);
+      case "list_tasks":
+        return Promise.resolve([]);
+      case "queue_state":
+        return Promise.resolve({ paused: false, running: 0, queued: 0 });
       case "get_settings":
-        return Promise.resolve({
-          audioSubdir: "audio",
-          videoSubdir: "video",
-          concurrency: 2,
-          theme: "dark",
-          language: "ru",
-          scanDepth: 3,
-          autoscan: true,
-          embedThumbnail: true,
-        });
+        return Promise.resolve(storedSettings);
       case "library_scan":
         return Promise.resolve({ scanned: 0, added: 0, updated: 0, removed: 0 });
       case "library_query":
@@ -90,17 +116,47 @@ function routeCommands() {
   });
 }
 
+/** Mirrors `main.tsx`: settings first, i18n second, the shell last. */
+function renderApp() {
+  return render(
+    <SettingsProvider>
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    </SettingsProvider>,
+  );
+}
+
 describe("App", () => {
   beforeEach(() => {
     invoke.mockReset();
     listen.mockReset();
     listen.mockResolvedValue(() => {});
+    document.documentElement.dataset.theme = "";
+  });
+
+  it("reads the settings once for the whole shell", async () => {
+    routeCommands();
+    renderApp();
+    await screen.findByText(/yt-dlp 2026\.10\.26/);
+
+    const reads = invoke.mock.calls.filter(([command]) => command === "get_settings");
+    expect(reads).toHaveLength(1);
+  });
+
+  it("applies the saved theme without a second read", async () => {
+    routeCommands({ get_settings: () => ({ ...storedSettings, theme: "light" }) });
+    renderApp();
+
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("light"),
+    );
   });
 
   it("renders the shell and the download screen", async () => {
     invoke.mockResolvedValue(info);
 
-    render(<App />);
+    renderApp();
 
     expect(screen.getByRole("heading", { name: "Загрузка" })).toBeInTheDocument();
     expect(screen.getByText("Библиотека")).toBeInTheDocument();
@@ -125,7 +181,7 @@ describe("App", () => {
       ),
     });
 
-    render(<App />);
+    renderApp();
 
     expect(
       await screen.findByText(
@@ -141,7 +197,7 @@ describe("App", () => {
   it("warns about a read-only root", async () => {
     invoke.mockResolvedValue({ ...info, writable: false });
 
-    render(<App />);
+    renderApp();
 
     expect(
       await screen.findByText("Нет прав на запись в папку приложения"),
@@ -151,7 +207,7 @@ describe("App", () => {
   it("shows an alert when the backend is unreachable", async () => {
     invoke.mockRejectedValue("backend is down");
 
-    render(<App />);
+    renderApp();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Не удалось прочитать окружение: backend is down",
@@ -161,7 +217,7 @@ describe("App", () => {
   it("navigates between download, library and practice", async () => {
     const user = userEvent.setup();
     routeCommands();
-    render(<App />);
+    renderApp();
     await screen.findByText(/yt-dlp 2026\.10\.26/);
 
     await user.click(screen.getByRole("button", { name: "Библиотека" }));
@@ -181,10 +237,53 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the download queue when the user switches screens", async () => {
+    const user = userEvent.setup();
+    routeCommands({
+      list_tasks: () => [queuedTask],
+      queue_state: () => ({ paused: false, running: 1, queued: 0 }),
+    });
+    renderApp();
+
+    expect(await screen.findByText("40%")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Библиотека" }));
+    await screen.findByRole("heading", { name: "Библиотека" });
+    await user.click(screen.getByRole("button", { name: "Загрузка" }));
+
+    // The screen was unmounted and mounted again; the queue is still there.
+    expect(await screen.findByText("40%")).toBeInTheDocument();
+    expect(screen.getByText("Guitar lesson")).toBeInTheDocument();
+  });
+
+  it("scans the library once on startup when autoscan is enabled", async () => {
+    routeCommands();
+    renderApp();
+    await screen.findByText(/yt-dlp 2026\.10\.26/);
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("library_scan", { full: false }),
+    );
+    const scans = invoke.mock.calls.filter(([command]) => command === "library_scan");
+    expect(scans).toHaveLength(1);
+  });
+
+  it("does not scan when autoscan is disabled", async () => {
+    routeCommands({
+      get_settings: () => ({ ...storedSettings, autoscan: false }),
+    });
+    renderApp();
+    await screen.findByText(/yt-dlp 2026\.10\.26/);
+
+    expect(
+      invoke.mock.calls.some(([command]) => command === "library_scan"),
+    ).toBe(false);
+  });
+
   it("opens and closes the settings dialog", async () => {
     const user = userEvent.setup();
     routeCommands();
-    render(<App />);
+    renderApp();
     await screen.findByText(/yt-dlp 2026\.10\.26/);
 
     await user.click(screen.getByRole("button", { name: "Настройки" }));

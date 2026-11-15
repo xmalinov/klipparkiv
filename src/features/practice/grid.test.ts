@@ -4,7 +4,7 @@ import {
   buildGrid,
   nearestValue,
   scaleBeats,
-} from "./PracticeProvider";
+} from "./gridMath";
 
 describe("practice grid helpers", () => {
   it("finds the nearest value", () => {

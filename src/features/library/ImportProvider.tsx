@@ -16,6 +16,7 @@ import {
   type ImportReport,
 } from "../../api/library";
 import { useI18n } from "../../i18n";
+import { errorMessage } from "../../lib/errors";
 
 interface ImportContextValue {
   progress: ImportProgress | null;
@@ -67,7 +68,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       try {
         return await importMedia(paths);
       } catch (cause) {
-        setError(String(cause));
+        setError(errorMessage(cause));
         throw cause;
       } finally {
         importingRef.current = false;

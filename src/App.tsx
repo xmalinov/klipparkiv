@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatVersion, loadAppInfo, type AppInfo } from "./api/appInfo";
-import { applyTheme, getSettings } from "./api/settings";
+import { scanLibrary } from "./api/library";
+import { applyTheme } from "./api/settings";
 import DownloadScreen from "./features/download/DownloadScreen";
 import { ImportProvider } from "./features/library/ImportProvider";
 import ImportStatus from "./features/library/ImportStatus";
@@ -11,6 +12,8 @@ import { PracticeProvider, usePractice } from "./features/practice/PracticeProvi
 import SettingsDialog from "./features/settings/SettingsDialog";
 import UpdateBanner from "./features/updates/UpdateBanner";
 import { useI18n, type Translate } from "./i18n";
+import { QueueProvider } from "./providers/QueueProvider";
+import { useSettings } from "./providers/SettingsProvider";
 import "./styles/tokens.css";
 import "./App.css";
 
@@ -64,20 +67,24 @@ function environmentWarnings(info: AppInfo, t: Translate): string[] {
 export default function App() {
   return (
     <PracticeProvider>
-      <ImportProvider>
-        <AppShell />
-      </ImportProvider>
+      <QueueProvider>
+        <ImportProvider>
+          <AppShell />
+        </ImportProvider>
+      </QueueProvider>
     </PracticeProvider>
   );
 }
 
 function AppShell() {
   const { t } = useI18n();
+  const { settings } = useSettings();
   const { track, openTrack } = usePractice();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>("download");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const scannedRef = useRef(false);
 
   useEffect(() => {
     const prevent = (event: DragEvent) => event.preventDefault();
@@ -90,16 +97,16 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    getSettings()
-      .then((settings) => {
-        if (alive) applyTheme(settings.theme);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+    if (settings) applyTheme(settings.theme);
+  }, [settings?.theme]);
+
+  // "Scan on startup" used to be a switch that nothing read. It runs once per
+  // process, not on every visit to the library.
+  useEffect(() => {
+    if (!settings?.autoscan || scannedRef.current) return;
+    scannedRef.current = true;
+    scanLibrary(false).catch(() => {});
+  }, [settings?.autoscan]);
 
   useEffect(() => {
     let alive = true;

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
@@ -8,21 +8,20 @@ import {
   formatResolution,
   loadThumb,
   openMedia,
-  queryLibrary,
-  removeFromLibrary,
   scanLibrary,
   type ImportReport,
   type LibraryItem,
-  type LibraryPage,
   type MediaKind,
   type SortKey,
 } from "../../api/library";
 import { formatDuration } from "../../api/tasks";
 import { useI18n } from "../../i18n";
+import { errorMessage } from "../../lib/errors";
 import DropOverlay from "./DropOverlay";
 import { useImport } from "./ImportProvider";
 import { MEDIA_EXTENSIONS } from "./mediaExtensions";
 import { useFileDrop } from "./useFileDrop";
+import { useLibraryQuery } from "./useLibraryQuery";
 
 const SORTS: {
   value: SortKey;
@@ -41,8 +40,6 @@ const SORTS: {
   { value: "size", labelKey: "library.sort.size" },
   { value: "channel", labelKey: "library.sort.channel" },
 ];
-
-const PAGE_SIZE = 200;
 
 function Cover({ item }: { item: LibraryItem }) {
   const [src, setSrc] = useState<string | null>(null);
@@ -102,24 +99,30 @@ export default function LibraryScreen({
   onPractice?: (item: LibraryItem) => void;
 }) {
   const { language, t } = useI18n();
-  const [search, setSearch] = useState("");
-  const [kind, setKind] = useState<MediaKind | undefined>(undefined);
-  const [sort, setSort] = useState<SortKey>("dateDesc");
+  const {
+    search,
+    setSearch,
+    kind,
+    setKind,
+    sort,
+    setSort,
+    page,
+    loading,
+    loadingMore,
+    error,
+    setError,
+    reload,
+    loadMore,
+    removeItem,
+  } = useLibraryQuery();
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [page, setPage] = useState<LibraryPage>({ items: [], total: 0 });
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ item: LibraryItem; x: number; y: number } | null>(
     null,
   );
-  const [tick, setTick] = useState(0);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const importer = useImport();
   const searchRef = useRef<HTMLInputElement>(null);
-  const versionRef = useRef(0);
-  const loadingMoreRef = useRef(false);
 
   const importPaths = useCallback(
     async (paths: string[]) => {
@@ -129,16 +132,16 @@ export default function LibraryScreen({
         const report = await importer.startImport(paths);
         setImportReport(report);
         setError(null);
-        setTick((value) => value + 1);
+        reload();
       } catch (cause) {
         setError(
           t("library.importError", {
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: cause instanceof Error ? cause.message : errorMessage(cause),
           }),
         );
       }
     },
-    [importer, t],
+    [importer, reload, t],
   );
 
   // Keep drops enabled during an import: the provider rejects the second job
@@ -146,86 +149,22 @@ export default function LibraryScreen({
   // ignoring the files.
   const drop = useFileDrop({ onDrop: importPaths });
 
-  const refresh = useCallback((full: boolean) => {
-    setScanning(true);
-    scanLibrary(full)
-      .catch((cause: unknown) => setError(String(cause)))
-      .finally(() => {
-        setScanning(false);
-        setTick((value) => value + 1);
-      });
-  }, []);
+  const refresh = useCallback(
+    (full: boolean) => {
+      setScanning(true);
+      scanLibrary(full)
+        .catch((cause: unknown) => setError(errorMessage(cause)))
+        .finally(() => {
+          setScanning(false);
+          reload();
+        });
+    },
+    [reload, setError],
+  );
 
   useEffect(() => {
     refresh(false);
   }, [refresh]);
-
-  useEffect(() => {
-    let alive = true;
-    const version = ++versionRef.current;
-    const run = () => {
-      setLoading(true);
-      setLoadingMore(false);
-      loadingMoreRef.current = false;
-      queryLibrary({
-        search: search.trim() || undefined,
-        kind,
-        sort,
-        limit: PAGE_SIZE,
-        offset: 0,
-      })
-        .then((result) => {
-          if (alive && versionRef.current === version) setPage(result);
-        })
-        .catch((cause: unknown) => {
-          if (alive && versionRef.current === version) setError(String(cause));
-        })
-        .finally(() => {
-          if (alive && versionRef.current === version) setLoading(false);
-        });
-    };
-    const timer = setTimeout(run, search ? 250 : 0);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [search, kind, sort, tick]);
-
-  const loadMore = useCallback(() => {
-    if (
-      loading ||
-      loadingMoreRef.current ||
-      page.items.length >= page.total
-    ) {
-      return;
-    }
-    const version = versionRef.current;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    queryLibrary({
-      search: search.trim() || undefined,
-      kind,
-      sort,
-      limit: PAGE_SIZE,
-      offset: page.items.length,
-    })
-      .then((result) => {
-        if (versionRef.current !== version) return;
-        setPage((current) => ({
-          items: [...current.items, ...result.items],
-          total: result.total,
-        }));
-      })
-      .catch((cause: unknown) => {
-        if (versionRef.current === version) setError(String(cause));
-      })
-      .finally(() => {
-        if (versionRef.current === version) {
-          loadingMoreRef.current = false;
-          setLoadingMore(false);
-        }
-      });
-  }, [kind, loading, page.items.length, page.total, search, sort]);
 
   function onScroll(event: React.UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
@@ -258,7 +197,7 @@ export default function LibraryScreen({
     try {
       await openMedia(item.path);
     } catch (cause) {
-      setError(t("library.openError", { error: String(cause) }));
+      setError(t("library.openError", { error: errorMessage(cause) }));
     }
   }
 
@@ -274,20 +213,12 @@ export default function LibraryScreen({
     try {
       await revealItemInDir(item.path);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }
 
   async function remove(item: LibraryItem) {
-    try {
-      await removeFromLibrary(item.id);
-      setPage((current) => ({
-        items: current.items.filter((entry) => entry.id !== item.id),
-        total: Math.max(0, current.total - 1),
-      }));
-    } catch (cause) {
-      setError(String(cause));
-    }
+    await removeItem(item);
   }
 
   async function addFiles() {
@@ -305,7 +236,7 @@ export default function LibraryScreen({
           : [];
       if (paths.length > 0) await importPaths(paths);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }
 

@@ -6,7 +6,7 @@ describe("library formatters", () => {
     expect(formatBytes(8_400_000)).toBe("8,0 МБ");
     expect(formatBytes(240_000_000)).toBe("228,9 МБ");
     expect(formatBytes(2_200_000_000)).toBe("2,0 ГБ");
-    expect(formatBytes(500)).toBe("1 КБ");
+    expect(formatBytes(500)).toBe("500 Б");
     expect(formatBytes(8_400_000, "en")).toBe("8.0 MB");
     expect(formatBytes(2_200_000_000, "en")).toBe("2.0 GB");
   });

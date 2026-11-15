@@ -9,18 +9,19 @@ mod state;
 mod stretch;
 pub mod waveform;
 
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::error::AppError;
 use crate::library::{Library, LibraryItem, resolve_media};
+use crate::media::probe_duration;
 use crate::paths::AppPaths;
 use crate::practice::metronome::{GridPayload, MetronomeGrid};
+use crate::time_util::{mtime_secs_checked, now_secs};
 
 use engine::{Player, Snapshot};
 use state::PracticeState as PracticeData;
@@ -57,44 +58,12 @@ struct ErrorPayload {
     message: String,
 }
 
-fn probe_duration(ffprobe: &Path, path: &Path) -> Option<f64> {
-    let mut command = Command::new(ffprobe);
-    command
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(path);
-    crate::process::hide_console_std(&mut command);
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
+fn player_error(message: String) -> AppError {
+    if message.contains("no track is open") {
+        AppError::busy(message)
+    } else {
+        AppError::invalid_input(message)
     }
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<f64>()
-        .ok()
-}
-
-fn file_mtime(path: &Path) -> Result<i64, String> {
-    let modified = fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .map_err(|error| format!("cannot read file time: {error}"))?;
-    Ok(modified
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0))
-}
-
-fn now_secs() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 fn load_state(library: &Library, path: &str, mtime: i64) -> PracticeData {
@@ -112,17 +81,19 @@ pub fn practice_open(
     library: State<'_, Library>,
     practice: State<'_, PracticeState>,
     path: String,
-) -> Result<PracticeOpened, String> {
+) -> Result<PracticeOpened, AppError> {
     let paths = app.state::<AppPaths>();
     let key = path.clone();
-    let resolved = resolve_media(paths.root(), Path::new(&key))?;
-    let mtime = file_mtime(&resolved)?;
+    let resolved = resolve_media(paths.root(), Path::new(&key)).map_err(AppError::access)?;
+    let mtime = mtime_secs_checked(&resolved).map_err(AppError::access)?;
     let state = load_state(&library, &key, mtime);
     let duration_secs = probe_duration(&paths.ffprobe(), &resolved);
     library.practice_unhide(&key).ok();
 
-    let mut player = practice.lock()?;
-    let opened = player.open(resolved.clone(), duration_secs)?;
+    let mut player = practice.lock().map_err(AppError::internal)?;
+    let opened = player
+        .open(resolved.clone(), duration_secs)
+        .map_err(AppError::internal)?;
     player.apply_state(&state);
 
     Ok(PracticeOpened {
@@ -138,10 +109,10 @@ pub fn practice_state_get(
     app: AppHandle,
     library: State<'_, Library>,
     path: String,
-) -> Result<PracticeData, String> {
+) -> Result<PracticeData, AppError> {
     let paths = app.state::<AppPaths>();
-    let resolved = resolve_media(paths.root(), Path::new(&path))?;
-    let mtime = file_mtime(&resolved)?;
+    let resolved = resolve_media(paths.root(), Path::new(&path)).map_err(AppError::access)?;
+    let mtime = mtime_secs_checked(&resolved).map_err(AppError::access)?;
     Ok(load_state(&library, &path, mtime))
 }
 
@@ -151,30 +122,37 @@ pub fn practice_state_save(
     library: State<'_, Library>,
     path: String,
     mut state: PracticeData,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let paths = app.state::<AppPaths>();
-    let resolved = resolve_media(paths.root(), Path::new(&path))?;
-    let mtime = file_mtime(&resolved)?;
+    let resolved = resolve_media(paths.root(), Path::new(&path)).map_err(AppError::access)?;
+    let mtime = mtime_secs_checked(&resolved).map_err(AppError::access)?;
     state.sanitize();
-    let json = state.to_json()?;
-    library.practice_save(&path, mtime, &json, now_secs())
+    let json = state.to_json().map_err(AppError::internal)?;
+    library
+        .practice_save(&path, mtime, &json, now_secs())
+        .map_err(AppError::internal)
 }
 
 #[tauri::command]
 pub fn practice_recent(
     library: State<'_, Library>,
     limit: u32,
-) -> Result<Vec<LibraryItem>, String> {
-    library.practice_recent(limit.clamp(1, 50))
+) -> Result<Vec<LibraryItem>, AppError> {
+    library
+        .practice_recent(limit.clamp(1, 50))
+        .map_err(AppError::internal)
 }
 
 #[tauri::command]
-pub fn practice_recent_hide(library: State<'_, Library>, path: String) -> Result<(), String> {
-    library.practice_hide(&path)
+pub fn practice_recent_hide(library: State<'_, Library>, path: String) -> Result<(), AppError> {
+    library.practice_hide(&path).map_err(AppError::internal)
 }
 
 #[tauri::command]
-pub async fn practice_waveform(app: AppHandle, path: String) -> Result<waveform::Waveform, String> {
+pub async fn practice_waveform(
+    app: AppHandle,
+    path: String,
+) -> Result<waveform::Waveform, AppError> {
     let paths = app.state::<AppPaths>();
     let root = paths.root().to_path_buf();
     let ffmpeg = paths.ffmpeg();
@@ -185,27 +163,28 @@ pub async fn practice_waveform(app: AppHandle, path: String) -> Result<waveform:
         waveform::load_or_compute(&ffmpeg, &cache_dir, &resolved)
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| AppError::internal(error.to_string()))?
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
-pub fn practice_play(state: State<'_, PracticeState>) -> Result<(), String> {
-    state.lock()?.play()
+pub fn practice_play(state: State<'_, PracticeState>) -> Result<(), AppError> {
+    state.lock()?.play().map_err(player_error)
 }
 
 #[tauri::command]
-pub fn practice_pause(state: State<'_, PracticeState>) -> Result<(), String> {
-    state.lock()?.pause()
+pub fn practice_pause(state: State<'_, PracticeState>) -> Result<(), AppError> {
+    state.lock()?.pause().map_err(player_error)
 }
 
 #[tauri::command]
-pub fn practice_seek(state: State<'_, PracticeState>, position_secs: f64) -> Result<(), String> {
-    state.lock()?.seek(position_secs)
+pub fn practice_seek(state: State<'_, PracticeState>, position_secs: f64) -> Result<(), AppError> {
+    state.lock()?.seek(position_secs).map_err(player_error)
 }
 
 #[tauri::command]
-pub fn practice_set_speed(state: State<'_, PracticeState>, speed: f32) -> Result<(), String> {
-    state.lock()?.set_speed(speed)
+pub fn practice_set_speed(state: State<'_, PracticeState>, speed: f32) -> Result<(), AppError> {
+    state.lock()?.set_speed(speed).map_err(player_error)
 }
 
 #[tauri::command]
@@ -213,13 +192,16 @@ pub fn practice_set_pitch(
     state: State<'_, PracticeState>,
     semitones: f32,
     cents: f32,
-) -> Result<(), String> {
-    state.lock()?.set_pitch(semitones, cents)
+) -> Result<(), AppError> {
+    state
+        .lock()?
+        .set_pitch(semitones, cents)
+        .map_err(player_error)
 }
 
 #[tauri::command]
-pub fn practice_set_volume(state: State<'_, PracticeState>, volume: f32) -> Result<(), String> {
-    state.lock()?.set_volume(volume)
+pub fn practice_set_volume(state: State<'_, PracticeState>, volume: f32) -> Result<(), AppError> {
+    state.lock()?.set_volume(volume).map_err(player_error)
 }
 
 #[tauri::command]
@@ -230,19 +212,24 @@ pub fn practice_set_loop(
     end_secs: Option<f64>,
     pre_roll: bool,
     pre_roll_secs: Option<f64>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     state
         .lock()?
         .set_loop(enabled, start_secs, end_secs, pre_roll, pre_roll_secs)
+        .map_err(player_error)
 }
 
 #[tauri::command]
 pub fn practice_set_grid(
     state: State<'_, PracticeState>,
     grid: Option<GridPayload>,
-) -> Result<(), String> {
-    let grid = grid.map(MetronomeGrid::try_from).transpose()?.map(Arc::new);
-    state.lock()?.set_grid(grid);
+) -> Result<(), AppError> {
+    let grid = grid
+        .map(MetronomeGrid::try_from)
+        .transpose()
+        .map_err(AppError::invalid_input)?
+        .map(Arc::new);
+    state.lock().map_err(AppError::internal)?.set_grid(grid);
     Ok(())
 }
 
@@ -251,19 +238,19 @@ pub fn practice_set_metronome(
     state: State<'_, PracticeState>,
     enabled: bool,
     volume: f32,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     state.lock()?.set_metronome(enabled, volume);
     Ok(())
 }
 
 #[tauri::command]
-pub fn practice_position(state: State<'_, PracticeState>) -> Result<Option<Snapshot>, String> {
-    Ok(state.lock()?.snapshot())
+pub fn practice_position(state: State<'_, PracticeState>) -> Result<Option<Snapshot>, AppError> {
+    Ok(state.lock().map_err(AppError::internal)?.snapshot())
 }
 
 #[tauri::command]
-pub fn practice_close(state: State<'_, PracticeState>) -> Result<(), String> {
-    state.lock()?.close();
+pub fn practice_close(state: State<'_, PracticeState>) -> Result<(), AppError> {
+    state.lock().map_err(AppError::internal)?.close();
     Ok(())
 }
 

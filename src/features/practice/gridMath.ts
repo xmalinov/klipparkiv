@@ -1,3 +1,5 @@
+import type { PracticeAnalysis } from "../../api/practice";
+
 export interface BarPlan {
   barStarts: number[];
   /** Time of the first beat when the track starts before bar 1. */
@@ -225,5 +227,125 @@ export function autoBarStarts(
     pickupUntil: barStarts[0] > beats[0] + 1e-6 ? beats[0] : null,
     confidence: vote.coverage,
     meter: local,
+  };
+}
+
+/** A playable grid derived from the analysis, a manual BPM or both. */
+export interface PracticeGrid {
+  bpm: number;
+  beats: number[];
+  downbeats: number[];
+  barStarts: number[];
+  beatsPerBar: number;
+  barOffset: number;
+  pickupUntil: number | null;
+  confidence: number;
+}
+
+export function nearestValue(values: number[], time: number): number | null {
+  if (values.length === 0) return null;
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (values[middle] < time) low = middle + 1;
+    else high = middle;
+  }
+  if (low === 0) return values[0];
+  if (low >= values.length) return values[values.length - 1];
+  return time - values[low - 1] <= values[low] - time
+    ? values[low - 1]
+    : values[low];
+}
+
+/** `2` subdivides every beat, `0.5` keeps every other one. */
+export function scaleBeats(beats: number[], scale: number): number[] {
+  if (scale === 2) {
+    const scaled: number[] = [];
+    for (let index = 0; index < beats.length; index += 1) {
+      scaled.push(beats[index]);
+      if (index + 1 < beats.length) {
+        scaled.push((beats[index] + beats[index + 1]) / 2);
+      }
+    }
+    return scaled;
+  }
+  if (scale === 0.5) {
+    return beats.filter((_, index) => index % 2 === 0);
+  }
+  return beats;
+}
+
+export function buildBarStarts(
+  beats: number[],
+  beatsPerBar: number,
+  barOffset: number,
+): number[] {
+  return fixedBarStarts(beats, beatsPerBar, barOffset).barStarts;
+}
+
+export function buildGrid(
+  analysis: PracticeAnalysis | null,
+  manualBpm: number | null,
+  duration: number,
+  bpmScale: number,
+  beatsPerBar: number,
+  barOffset: number,
+  manualGrid = false,
+): PracticeGrid | null {
+  let sourceBeats: number[] = [];
+  let sourceBpm = 0;
+  let autoPlan: BarPlan | null = null;
+
+  if (manualBpm && manualBpm > 0 && duration > 0) {
+    const interval = 60 / manualBpm;
+    const count = Math.ceil(duration / interval) + 1;
+    sourceBeats = Array.from({ length: count }, (_, index) => index * interval);
+    sourceBpm = manualBpm;
+  } else if (analysis && analysis.beats.length >= 2 && analysis.bpm > 0) {
+    sourceBeats = analysis.beats;
+    sourceBpm = analysis.bpm;
+    if (!manualGrid && bpmScale === 1) {
+      autoPlan = autoBarStarts(
+        analysis.beats,
+        analysis.downbeats,
+        analysis.downbeatConfidence ?? [],
+      );
+    }
+  }
+  if (sourceBeats.length < 2) return null;
+
+  const beats = scaleBeats(sourceBeats, bpmScale);
+  if (beats.length < 2) return null;
+
+  const effectiveMeter =
+    manualBpm || manualGrid
+      ? beatsPerBar
+      : (analysis?.beatsPerBar || beatsPerBar);
+  const effectiveOffset =
+    manualBpm || manualGrid ? barOffset : (analysis?.barOffset ?? barOffset);
+  const scaledOffset = Math.round(effectiveOffset * bpmScale);
+
+  let plan = autoPlan;
+  if (!plan || plan.barStarts.length < 2) {
+    plan = fixedBarStarts(beats, effectiveMeter, scaledOffset);
+  }
+  if (plan.barStarts.length === 0) return null;
+
+  const outputMeter = plan.meter || effectiveMeter;
+  const outputOffset =
+    outputMeter > 0
+      ? ((effectiveOffset % outputMeter) + outputMeter) % outputMeter
+      : 0;
+
+  return {
+    bpm: sourceBpm * bpmScale,
+    beats,
+    downbeats: plan.barStarts,
+    barStarts: plan.barStarts,
+    beatsPerBar: outputMeter,
+    barOffset: outputOffset,
+    pickupUntil: plan.pickupUntil,
+    confidence: plan.confidence,
   };
 }

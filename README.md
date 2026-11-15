@@ -246,6 +246,7 @@ Checks:
 npm run typecheck
 npm run test:run
 npm run build
+npm run check:contracts
 cargo fmt    --manifest-path src-tauri\Cargo.toml -- --check
 cargo clippy --manifest-path src-tauri\Cargo.toml --all-targets -- -D warnings
 cargo test   --manifest-path src-tauri\Cargo.toml
@@ -502,6 +503,7 @@ macOS: `node scripts/fetch-binaries.mjs mac-x64|mac-arm64` скачивает
 npm run typecheck
 npm run test:run
 npm run build
+npm run check:contracts
 cargo fmt    --manifest-path src-tauri\Cargo.toml -- --check
 cargo clippy --manifest-path src-tauri\Cargo.toml --all-targets -- -D warnings
 cargo test   --manifest-path src-tauri\Cargo.toml

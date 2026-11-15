@@ -6,16 +6,18 @@ pub mod types;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::analysis::types::{ANALYSIS_VERSION, AnalysisError, AnalysisProgress, PracticeAnalysis};
+use crate::error::AppError;
 use crate::library::resolve_media;
+use crate::media::probe_duration;
 use crate::paths::AppPaths;
+use crate::time_util::now_secs;
 
 struct Job {
     path: String,
@@ -45,36 +47,6 @@ fn file_identity(path: &Path) -> Result<(i64, u64), String> {
     Ok((mtime, metadata.len()))
 }
 
-fn probe_duration(ffprobe: &Path, path: &Path) -> Option<f64> {
-    let mut command = Command::new(ffprobe);
-    command
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(path);
-    crate::process::hide_console_std(&mut command);
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<f64>()
-        .ok()
-}
-
-fn now_secs() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 fn emit_progress(app: &AppHandle, path: &str, stage: &'static str, progress: f32) {
     let _ = app.emit(
         "analysis://progress",
@@ -101,10 +73,10 @@ fn emit_error(app: &AppHandle, path: &str, message: String) {
 pub fn practice_analysis_get(
     app: AppHandle,
     path: String,
-) -> Result<Option<PracticeAnalysis>, String> {
+) -> Result<Option<PracticeAnalysis>, AppError> {
     let paths = app.state::<AppPaths>();
-    let resolved = resolve_media(paths.root(), Path::new(&path))?;
-    let (mtime, size) = file_identity(&resolved)?;
+    let resolved = resolve_media(paths.root(), Path::new(&path)).map_err(AppError::access)?;
+    let (mtime, size) = file_identity(&resolved).map_err(AppError::access)?;
     let key = cache::cache_key(&resolved, mtime, size);
     Ok(cache::load(&paths.analysis_cache(), &key))
 }
@@ -116,10 +88,10 @@ pub fn practice_analysis_start(
     app: AppHandle,
     state: State<'_, AnalysisState>,
     path: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let paths = app.state::<AppPaths>();
-    let resolved = resolve_media(paths.root(), Path::new(&path))?;
-    let (mtime, size) = file_identity(&resolved)?;
+    let resolved = resolve_media(paths.root(), Path::new(&path)).map_err(AppError::access)?;
+    let (mtime, size) = file_identity(&resolved).map_err(AppError::access)?;
     let cache_dir = paths.analysis_cache();
     let key = cache::cache_key(&resolved, mtime, size);
 
@@ -133,7 +105,7 @@ pub fn practice_analysis_start(
         let mut slot = state
             .job
             .lock()
-            .map_err(|_| "analysis state lock is poisoned".to_string())?;
+            .map_err(|_| AppError::internal("analysis state lock is poisoned"))?;
         if let Some(job) = slot.as_ref().filter(|job| job.path == path) {
             Some(job.progress.clone())
         } else {
@@ -158,7 +130,7 @@ pub fn practice_analysis_start(
         let slot = state
             .job
             .lock()
-            .map_err(|_| "analysis state lock is poisoned".to_string())?;
+            .map_err(|_| AppError::internal("analysis state lock is poisoned"))?;
         let job = slot
             .as_ref()
             .ok_or_else(|| "analysis job was not created".to_string())?;
@@ -184,11 +156,11 @@ pub fn practice_analysis_start(
 }
 
 #[tauri::command]
-pub fn practice_analysis_cancel(state: State<'_, AnalysisState>) -> Result<(), String> {
+pub fn practice_analysis_cancel(state: State<'_, AnalysisState>) -> Result<(), AppError> {
     let mut slot = state
         .job
         .lock()
-        .map_err(|_| "analysis state lock is poisoned".to_string())?;
+        .map_err(|_| AppError::internal("analysis state lock is poisoned"))?;
     cancel_job(&mut slot);
     Ok(())
 }

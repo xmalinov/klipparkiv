@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { getSettings } from "../api/settings";
+import { useSettings } from "../providers/SettingsProvider";
 
 export type Language = "ru" | "en";
 
@@ -719,22 +719,17 @@ export function I18nProvider({
   children: ReactNode;
   initialLanguage?: Language;
 }) {
+  const { settings } = useSettings();
   const [language, setLanguageState] = useState<Language>(initialLanguage);
 
+  // The language is owned by `SettingsProvider`: adopting it here keeps the
+  // boot sequence and the settings dialog on the same value.
   useEffect(() => {
-    let alive = true;
-    getSettings()
-      .then((settings) => {
-        if (!alive) return;
-        if (settings.language === "ru" || settings.language === "en") {
-          setLanguageState(settings.language);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+    const saved = settings?.language;
+    if (saved === "ru" || saved === "en") {
+      setLanguageState(saved);
+    }
+  }, [settings?.language]);
 
   useEffect(() => {
     document.documentElement.lang = language;

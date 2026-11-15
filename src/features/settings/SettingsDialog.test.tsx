@@ -3,7 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateStatus } from "../../api/updates";
+import { SettingsProvider } from "../../providers/SettingsProvider";
 import SettingsDialog from "./SettingsDialog";
+
+/** The dialog reads the saved settings from the provider, not from `invoke`. */
+function renderDialog(props: React.ComponentProps<typeof SettingsDialog>) {
+  return render(
+    <SettingsProvider>
+      <SettingsDialog {...props} />
+    </SettingsProvider>,
+  );
+}
 
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
@@ -99,7 +109,7 @@ describe("SettingsDialog", () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
     const onClose = vi.fn();
-    render(<SettingsDialog info={info} onClose={onClose} onSaved={onSaved} />);
+    renderDialog({ info, onClose, onSaved });
 
     const select = await screen.findByLabelText("Одновременных загрузок");
     await user.selectOptions(select, "4");
@@ -116,7 +126,7 @@ describe("SettingsDialog", () => {
 
   it("applies the selected theme", async () => {
     const user = userEvent.setup();
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("button", { name: "Светлая" }));
@@ -129,7 +139,7 @@ describe("SettingsDialog", () => {
 
   it("updates yt-dlp from the updates tab", async () => {
     const user = userEvent.setup();
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));
@@ -140,7 +150,7 @@ describe("SettingsDialog", () => {
 
   it("shows the portable root in about", async () => {
     const user = userEvent.setup();
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "О программе" }));
@@ -152,7 +162,7 @@ describe("SettingsDialog", () => {
     updates.checkAppUpdate.mockResolvedValue(
       updateStatus({ state: "available", version: "1.8.0" }),
     );
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));
@@ -176,7 +186,7 @@ describe("SettingsDialog", () => {
     updates.installAppUpdate.mockResolvedValue(
       updateStatus({ state: "installing", version: "1.8.0" }),
     );
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));
@@ -204,7 +214,7 @@ describe("SettingsDialog", () => {
     updates.cancelPendingUpdate.mockResolvedValue(
       updateStatus({ state: "ready", version: "1.8.0" }),
     );
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));
@@ -224,7 +234,7 @@ describe("SettingsDialog", () => {
   it("reports a failed update check", async () => {
     const user = userEvent.setup();
     updates.checkAppUpdate.mockRejectedValue("network down");
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));
@@ -242,7 +252,7 @@ describe("SettingsDialog", () => {
         percent: 42.6,
       }),
     );
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));
@@ -255,7 +265,7 @@ describe("SettingsDialog", () => {
   it("reports that the installed version is current", async () => {
     const user = userEvent.setup();
     updates.getUpdateStatus.mockResolvedValue(updateStatus({ state: "current" }));
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));
@@ -271,7 +281,7 @@ describe("SettingsDialog", () => {
       push = handler;
       return Promise.resolve(() => {});
     });
-    render(<SettingsDialog info={info} onClose={() => {}} onSaved={() => {}} />);
+    renderDialog({ info, onClose: () => {}, onSaved: () => {} });
     await screen.findByLabelText("Одновременных загрузок");
 
     await act(async () => {
@@ -284,13 +294,11 @@ describe("SettingsDialog", () => {
 
   it("warns when self-updates are not configured", async () => {
     const user = userEvent.setup();
-    render(
-      <SettingsDialog
-        info={{ ...info, updateConfigured: false }}
-        onClose={() => {}}
-        onSaved={() => {}}
-      />,
-    );
+    renderDialog({
+      info: { ...info, updateConfigured: false },
+      onClose: () => {},
+      onSaved: () => {},
+    });
     await screen.findByLabelText("Одновременных загрузок");
 
     await user.click(screen.getByRole("tab", { name: "Обновления" }));

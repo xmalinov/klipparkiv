@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import type { AppInfo } from "../../api/appInfo";
 import {
   applyTheme,
-  getSettings,
-  saveSettings,
   updateYtdlp,
   type Settings,
 } from "../../api/settings";
@@ -17,6 +15,8 @@ import {
   type UpdateStatus,
 } from "../../api/updates";
 import { useI18n } from "../../i18n";
+import { useSettings } from "../../providers/SettingsProvider";
+import { errorMessage } from "../../lib/errors";
 
 type Tab = "general" | "library" | "updates" | "about";
 
@@ -50,6 +50,8 @@ export default function SettingsDialog({
   onSaved: (settings: Settings) => void;
 }) {
   const { setLanguage, t } = useI18n();
+  const { settings: savedSettings, save: saveSettings, error: settingsError } =
+    useSettings();
   const [tab, setTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -81,23 +83,12 @@ export default function SettingsDialog({
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    getSettings()
-      .then((value) => {
-        if (alive) {
-          setSettings({
-            ...value,
-            language: value.language === "en" ? "en" : "ru",
-          });
-        }
-      })
-      .catch((cause: unknown) => {
-        if (alive) setError(String(cause));
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+    if (!savedSettings) return;
+    setSettings({
+      ...savedSettings,
+      language: savedSettings.language === "en" ? "en" : "ru",
+    });
+  }, [savedSettings]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -122,7 +113,7 @@ export default function SettingsDialog({
       onSaved(saved);
       onClose();
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     } finally {
       setSaving(false);
     }
@@ -136,7 +127,7 @@ export default function SettingsDialog({
       const version = await updateYtdlp();
       setUpdateNote(t("settings.updated", { version }));
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     } finally {
       setUpdating(false);
     }
@@ -149,7 +140,7 @@ export default function SettingsDialog({
       const next = await action();
       if (next && typeof next.state === "string") setAppUpdate(next);
     } catch (cause) {
-      setAppUpdateError(String(cause));
+      setAppUpdateError(errorMessage(cause));
     } finally {
       setAppBusy(false);
     }
@@ -259,7 +250,9 @@ export default function SettingsDialog({
           )}
 
           {!settings ? (
-            <p className="queue-empty">{t("settings.loading")}</p>
+            <p className="queue-empty">
+              {settingsError ?? t("settings.loading")}
+            </p>
           ) : tab === "general" ? (
             <>
               <div className="row">

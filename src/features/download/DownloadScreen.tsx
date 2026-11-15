@@ -1,31 +1,25 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "../../api/library";
-import { getSettings } from "../../api/settings";
+import { errorMessage } from "../../lib/errors";
 import { useI18n, type Translate } from "../../i18n";
+import { useQueue } from "../../providers/QueueProvider";
+import { useSettings } from "../../providers/SettingsProvider";
 import DropOverlay from "../library/DropOverlay";
 import { useFileDrop } from "../library/useFileDrop";
+import QueueList from "./QueueList";
 import {
-  applyProgress,
-  cancelTask,
   enqueueBatch,
   enqueueLinks,
   enqueueTask,
   formatDuration,
-  formatEta,
-  formatSpeed,
   formatTimecode,
   formatUploadDate,
   formatViews,
+  isTerminalState,
   parseTimecode,
-  pauseQueue,
   probeMetadata,
-  resumeQueue,
-  stateLabel,
-  subscribeTasks,
-  upsertTask,
   type DownloadMode,
-  type QueueState,
   type TaskSnapshot,
   type VideoInfo,
 } from "../../api/tasks";
@@ -96,23 +90,6 @@ function firstLink(text: string): string {
   );
 }
 
-function taskSubtitle(task: TaskSnapshot, t: Translate): string {
-  const base =
-    task.mode === "audio" ? t("download.task.audio") : t("download.task.video");
-  const parts = [task.clip ? t("download.task.clip", { base }) : base];
-  if (task.playlistCount !== null) {
-    parts.push(
-      task.playlistIndex !== null
-        ? t("download.queuePlaylist", {
-            index: task.playlistIndex,
-            count: task.playlistCount || "?",
-          })
-        : t("download.queuePlaylistUnknown"),
-    );
-  }
-  return parts.join(" · ");
-}
-
 export default function DownloadScreen({ root }: { root?: string }) {
   const { language, t } = useI18n();
   const [url, setUrl] = useState("");
@@ -121,8 +98,9 @@ export default function DownloadScreen({ root }: { root?: string }) {
   const [quality, setQuality] = useState("1080");
   const [audioKbps, setAudioKbps] = useState(320);
   const [outDir, setOutDir] = useState<string | null>(null);
-  const [audioSubdir, setAudioSubdir] = useState("audio");
-  const [videoSubdir, setVideoSubdir] = useState("video");
+  const { settings } = useSettings();
+  const audioSubdir = settings?.audioSubdir || "audio";
+  const videoSubdir = settings?.videoSubdir || "video";
   const [clipStart, setClipStart] = useState("");
   const [clipEnd, setClipEnd] = useState("");
   const [meta, setMeta] = useState<VideoInfo | null>(null);
@@ -134,49 +112,11 @@ export default function DownloadScreen({ root }: { root?: string }) {
   const [playlistEnd, setPlaylistEnd] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [listText, setListText] = useState("");
-  const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
-  const [queue, setQueue] = useState<QueueState>({
-    paused: false,
-    running: 0,
-    queued: 0,
-  });
+  const { tasks, queue, addTasks, cancel, remove, togglePause: toggleQueuePause } =
+    useQueue();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const drop = useFileDrop({ onDrop: handlePaths });
-
-  useEffect(() => {
-    let alive = true;
-    getSettings()
-      .then((settings) => {
-        if (!alive) return;
-        setAudioSubdir(settings.audioSubdir || "audio");
-        setVideoSubdir(settings.videoSubdir || "video");
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    let dispose: (() => void) | undefined;
-
-    subscribeTasks({
-      onState: (task) => setTasks((current) => upsertTask(current, task)),
-      onProgress: (progress) =>
-        setTasks((current) => applyProgress(current, progress)),
-      onQueue: (state) => setQueue(state),
-    }).then((unlisten) => {
-      if (alive) dispose = unlisten;
-      else unlisten();
-    });
-
-    return () => {
-      alive = false;
-      dispose?.();
-    };
-  }, []);
 
   useEffect(() => {
     const trimmed = url.trim();
@@ -198,7 +138,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
           if (alive) setMeta(info);
         })
         .catch((cause: unknown) => {
-          if (alive) setMetaError(String(cause));
+          if (alive) setMetaError(errorMessage(cause));
         })
         .finally(() => {
           if (alive) setProbing(false);
@@ -294,7 +234,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected === "string") setOutDir(selected);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }
 
@@ -320,10 +260,10 @@ export default function DownloadScreen({ root }: { root?: string }) {
           playlistAll && rangeStart !== null ? rangeStart : undefined,
         playlistEnd: playlistAll && rangeEnd !== null ? rangeEnd : undefined,
       });
-      setTasks((current) => created.reduce(upsertTask, current));
+      addTasks(created);
       setUrl("");
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -344,11 +284,11 @@ export default function DownloadScreen({ root }: { root?: string }) {
         audioKbps: wantsAudio ? audioKbps : undefined,
         outDir: outDir ?? undefined,
       });
-      setTasks((current) => created.reduce(upsertTask, current));
+      addTasks(created);
       setListText("");
       setListOpen(false);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -369,7 +309,7 @@ export default function DownloadScreen({ root }: { root?: string }) {
       }
       await submitList(text);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }
 
@@ -382,12 +322,23 @@ export default function DownloadScreen({ root }: { root?: string }) {
     }
   }
 
-  async function togglePause() {
+  async function handleTogglePause() {
     try {
-      const next = queue.paused ? await resumeQueue() : await pauseQueue();
-      setQueue(next);
+      await toggleQueuePause();
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
+    }
+  }
+
+  async function handleTaskAction(task: TaskSnapshot) {
+    try {
+      if (isTerminalState(task.state)) {
+        await remove(task.id);
+      } else {
+        await cancel(task.id);
+      }
+    } catch (cause) {
+      setError(errorMessage(cause));
     }
   }
 
@@ -405,9 +356,9 @@ export default function DownloadScreen({ root }: { root?: string }) {
         audioKbps: wantsAudio ? audioKbps : undefined,
         outDir: outDir ?? undefined,
       });
-      setTasks((current) => created.reduce(upsertTask, current));
+      addTasks(created);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }
 
@@ -882,79 +833,12 @@ export default function DownloadScreen({ root }: { root?: string }) {
         </button>
       </div>
 
-      <section className="queue" aria-label={t("download.queueLabel")}>
-        <div className="queue-top">
-          <h2>{t("download.queue")}</h2>
-          {tasks.length > 0 && <span className="queue-count">{tasks.length}</span>}
-          {tasks.length > 0 && (
-            <div className="queue-tools">
-              <button type="button" className="link-btn" onClick={togglePause}>
-                {queue.paused ? t("download.resume") : t("download.pause")}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {tasks.length === 0 ? (
-          <p className="queue-empty">{t("download.queueEmpty")}</p>
-        ) : (
-          <div className="qtable">
-            <div className="qhead">
-              <span />
-              <span>{t("download.colName")}</span>
-              <span>{t("download.colStatus")}</span>
-              <span>{t("download.colProgress")}</span>
-              <span>{t("download.colSpeed")}</span>
-              <span />
-            </div>
-            {tasks.map((task) => {
-              const label =
-                task.title && task.title.trim() ? task.title : task.url;
-              const status =
-                task.state === "running"
-                  ? [formatSpeed(task.speedBps, language), formatEta(task.etaSecs)]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : task.state === "skipped"
-                    ? t("download.alreadyDownloaded")
-                    : task.state === "partial"
-                      ? (task.error ?? t("download.partialHint"))
-                      : (task.error ?? "—");
-              return (
-                <div className="qrow" key={task.id}>
-                  <span className={`qdot ${task.state}`} aria-hidden="true" />
-                  <div className="qname">
-                    <b title={label}>{label}</b>
-                    <span>{taskSubtitle(task, t)}</span>
-                  </div>
-                  <div className="qstatus">{stateLabel(task, language)}</div>
-                  <div className="qprogress">
-                    <div className="qbar">
-                      <i style={{ width: `${Math.min(100, task.percent)}%` }} />
-                    </div>
-                  </div>
-                  <div className="qspeed" title={task.error ?? undefined}>
-                    {status}
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label={t("download.cancelTask", { url: task.url })}
-                    title={
-                      task.state === "running"
-                        ? t("download.cancel")
-                        : t("download.removeTask")
-                    }
-                    onClick={() => cancelTask(task.id)}
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+      <QueueList
+        tasks={tasks}
+        paused={queue.paused}
+        onTogglePause={handleTogglePause}
+        onTaskAction={handleTaskAction}
+      />
     </div>
   );
 }

@@ -23,6 +23,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Fails if the UI invokes a command that `generate_handler!` does not list.
+      - name: Command contract
+        run: npm run check:contracts
+
+      # Fails when a Rust enum and its TypeScript union drift apart.
+      - name: Type contract
+        run: npm run check:types
+
       - name: Frontend tests and coverage
         run: npm run test:coverage
 

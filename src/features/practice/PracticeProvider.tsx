@@ -10,6 +10,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import type { LibraryItem } from "../../api/library";
+import { errorMessage } from "../../lib/errors";
 import {
   DEFAULT_PRACTICE_STATE,
   onPracticeAnalysisDone,
@@ -45,10 +46,10 @@ import {
   type Waveform,
 } from "../../api/practice";
 import {
-  autoBarStarts,
-  fixedBarStarts,
+  buildGrid,
   nearestBeatIndex,
-  type BarPlan,
+  nearestValue,
+  type PracticeGrid,
 } from "./gridMath";
 
 export const REGION_COLORS: Record<RegionKind, string> = {
@@ -77,17 +78,6 @@ export interface Selection {
 }
 
 export type AnalysisStatus = "idle" | "loading" | "ready" | "error";
-
-export interface PracticeGrid {
-  bpm: number;
-  beats: number[];
-  downbeats: number[];
-  barStarts: number[];
-  beatsPerBar: number;
-  barOffset: number;
-  pickupUntil: number | null;
-  confidence: number;
-}
 
 interface PracticeContextValue {
   track: LibraryItem | null;
@@ -166,113 +156,6 @@ function sortRegions(regions: PracticeRegion[]): PracticeRegion[] {
   return [...regions].sort((left, right) => left.start - right.start);
 }
 
-export function nearestValue(values: number[], time: number): number | null {
-  if (values.length === 0) return null;
-  let low = 0;
-  let high = values.length;
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    if (values[middle] < time) low = middle + 1;
-    else high = middle;
-  }
-  if (low === 0) return values[0];
-  if (low >= values.length) return values[values.length - 1];
-  return time - values[low - 1] <= values[low] - time
-    ? values[low - 1]
-    : values[low];
-}
-
-export function scaleBeats(beats: number[], scale: number): number[] {
-  if (scale === 2) {
-    const scaled: number[] = [];
-    for (let index = 0; index < beats.length; index += 1) {
-      scaled.push(beats[index]);
-      if (index + 1 < beats.length) {
-        scaled.push((beats[index] + beats[index + 1]) / 2);
-      }
-    }
-    return scaled;
-  }
-  if (scale === 0.5) {
-    return beats.filter((_, index) => index % 2 === 0);
-  }
-  return beats;
-}
-
-export function buildBarStarts(
-  beats: number[],
-  beatsPerBar: number,
-  barOffset: number,
-): number[] {
-  return fixedBarStarts(beats, beatsPerBar, barOffset).barStarts;
-}
-
-export function buildGrid(
-  analysis: PracticeAnalysis | null,
-  manualBpm: number | null,
-  duration: number,
-  bpmScale: number,
-  beatsPerBar: number,
-  barOffset: number,
-  manualGrid = false,
-): PracticeGrid | null {
-  let sourceBeats: number[] = [];
-  let sourceBpm = 0;
-  let autoPlan: BarPlan | null = null;
-
-  if (manualBpm && manualBpm > 0 && duration > 0) {
-    const interval = 60 / manualBpm;
-    const count = Math.ceil(duration / interval) + 1;
-    sourceBeats = Array.from({ length: count }, (_, index) => index * interval);
-    sourceBpm = manualBpm;
-  } else if (analysis && analysis.beats.length >= 2 && analysis.bpm > 0) {
-    sourceBeats = analysis.beats;
-    sourceBpm = analysis.bpm;
-    if (!manualGrid && bpmScale === 1) {
-      autoPlan = autoBarStarts(
-        analysis.beats,
-        analysis.downbeats,
-        analysis.downbeatConfidence ?? [],
-      );
-    }
-  }
-  if (sourceBeats.length < 2) return null;
-
-  const beats = scaleBeats(sourceBeats, bpmScale);
-  if (beats.length < 2) return null;
-
-  const effectiveMeter =
-    manualBpm || manualGrid
-      ? beatsPerBar
-      : (analysis?.beatsPerBar || beatsPerBar);
-  const effectiveOffset =
-    manualBpm || manualGrid ? barOffset : (analysis?.barOffset ?? barOffset);
-  const scaledOffset = Math.round(effectiveOffset * bpmScale);
-
-  let plan = autoPlan;
-  if (!plan || plan.barStarts.length < 2) {
-    plan = fixedBarStarts(beats, effectiveMeter, scaledOffset);
-  }
-  if (plan.barStarts.length === 0) return null;
-
-  const outputMeter = plan.meter || effectiveMeter;
-  const outputOffset =
-    outputMeter > 0
-      ? ((effectiveOffset % outputMeter) + outputMeter) % outputMeter
-      : 0;
-
-  return {
-    bpm: sourceBpm * bpmScale,
-    beats,
-    downbeats: plan.barStarts,
-    barStarts: plan.barStarts,
-    beatsPerBar: outputMeter,
-    barOffset: outputOffset,
-    pickupUntil: plan.pickupUntil,
-    confidence: plan.confidence,
-  };
-}
-
 export function PracticeProvider({ children }: { children: ReactNode }) {
   const [track, setTrack] = useState<LibraryItem | null>(null);
   const [state, setState] = useState<PracticeState>(DEFAULT_PRACTICE_STATE);
@@ -343,14 +226,14 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       beats: grid.beats,
       downbeats: grid.downbeats,
     };
-    practiceSetGrid(payload).catch((cause) => setError(String(cause)));
+    practiceSetGrid(payload).catch((cause) => setError(errorMessage(cause)));
   }, [grid, state.gridEnabled]);
 
   useEffect(() => {
     practiceSetMetronome(
       state.metronomeEnabled,
       state.metronomeVolume,
-    ).catch((cause) => setError(String(cause)));
+    ).catch((cause) => setError(errorMessage(cause)));
   }, [state.metronomeEnabled, state.metronomeVolume]);
 
   const updateSelection = useCallback((next: Selection | null) => {
@@ -372,7 +255,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       await practiceRecentHide(path);
       setRecent((items) => items.filter((item) => item.path !== path));
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }, []);
 
@@ -474,7 +357,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       await practiceAnalysisStart(currentTrack.path);
     } catch (cause) {
       setAnalysisStatus("error");
-      setAnalysisError(String(cause));
+      setAnalysisError(errorMessage(cause));
     }
   }, [applyAnalysis]);
 
@@ -485,7 +368,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     try {
       await practiceStateSave(currentTrack.path, next);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }, []);
 
@@ -546,11 +429,11 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
         setWaveformLoading(true);
         practiceWaveform(item.path)
           .then((value) => setWaveform(value))
-          .catch((cause: unknown) => setError(String(cause)))
+          .catch((cause: unknown) => setError(errorMessage(cause)))
           .finally(() => setWaveformLoading(false));
         refreshRecent();
       } catch (cause) {
-        setError(String(cause));
+        setError(errorMessage(cause));
       } finally {
         setOpening(false);
       }
@@ -563,7 +446,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
     try {
       await practiceClose();
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
     hydratedRef.current = false;
     setTrack(null);
@@ -595,7 +478,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
         setSnapshot((current) => ({ ...current, playing: true }));
       }
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }, [saveNow, snapshot.playing]);
 
@@ -627,7 +510,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       setSnapshot((current) => ({ ...current, positionSecs: position }));
       setState((current) => ({ ...current, positionSecs: position }));
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }, []);
 
@@ -636,7 +519,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       await practiceSetSpeed(speed);
       setState((current) => ({ ...current, speed }));
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }, []);
 
@@ -645,7 +528,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       await practiceSetPitch(semitones, cents);
       setState((current) => ({ ...current, pitchSemitones: semitones, cents }));
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }, []);
 
@@ -655,7 +538,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
       await practiceSetVolume(next);
       setState((current) => ({ ...current, volume: next }));
     } catch (cause) {
-      setError(String(cause));
+      setError(errorMessage(cause));
     }
   }, []);
 
@@ -725,7 +608,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
           metronomeVolume: nextVolume,
         }));
       } catch (cause) {
-        setError(String(cause));
+        setError(errorMessage(cause));
       }
     },
     [],
@@ -788,7 +671,7 @@ export function PracticeProvider({ children }: { children: ReactNode }) {
           await practiceSetLoop(false, null, null, wantsPreRoll, preRollSecs);
         }
       } catch (cause) {
-        setError(String(cause));
+        setError(errorMessage(cause));
       }
     },
     [],

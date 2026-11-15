@@ -1,26 +1,30 @@
 mod analysis;
 mod args;
 mod binaries;
-mod commands;
+mod error;
 mod i18n;
+mod ipc;
 mod library;
+mod media;
 mod metadata;
 mod paths;
 pub mod practice;
 mod process;
 mod progress;
+mod queue;
 mod settings;
-mod updater;
+mod time_util;
+mod update;
 
-use commands::TaskStore;
 use paths::AppPaths;
+use queue::TaskStore;
 use serde::Serialize;
 use settings::SettingsStore;
 use std::sync::Arc;
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use updater::UpdateStore;
+use update::UpdateStore;
 
 /// Handles to the tray menu items so they can follow the UI language.
 pub struct TrayMenuItems {
@@ -101,7 +105,7 @@ fn app_info_for(paths: &AppPaths) -> AppInfo {
         .to_string(),
         writable,
         version: env!("CARGO_PKG_VERSION").to_string(),
-        update_configured: updater::is_configured(),
+        update_configured: update::is_configured(),
         bin_dir: paths.bin().display().to_string(),
         ytdlp: ytdlp.version.clone(),
         ffmpeg: ffmpeg.version.clone(),
@@ -153,8 +157,8 @@ pub fn run() {
             let cleanup_paths = paths.clone();
             let sweep_paths = paths.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                updater::cleanup_stale_state(&cleanup_paths);
-                library::sweep_part_files(&sweep_paths);
+                update::cleanup_stale_state(&cleanup_paths);
+                library::commands::sweep_part_files(&sweep_paths);
             });
             #[cfg(target_os = "macos")]
             tauri::async_runtime::spawn_blocking(move || {
@@ -199,7 +203,7 @@ pub fn run() {
                             }
                         }
                         "pause" => {
-                            commands::toggle_pause(app);
+                            ipc::tasks::toggle_pause(app);
                         }
                         "quit" => app.exit(0),
                         _ => {}
@@ -208,38 +212,39 @@ pub fn run() {
                 let builder = builder.icon_as_template(true);
                 builder.build(app)?;
             }
-            updater::schedule_startup_check(app.handle().clone());
+            update::schedule_startup_check(app.handle().clone());
             practice::spawn_events(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
-            commands::enqueue_task,
-            commands::enqueue_batch,
-            commands::enqueue_links,
-            commands::probe_metadata,
-            commands::cancel_task,
-            commands::pause_queue,
-            commands::resume_queue,
-            commands::queue_state,
-            commands::list_tasks,
-            commands::get_settings,
-            commands::save_settings,
-            commands::update_ytdlp,
-            updater::get_update_status,
-            updater::check_app_update,
-            updater::download_app_update,
-            updater::install_app_update,
-            updater::open_manual_update,
-            updater::cancel_pending_update,
-            library::library_query,
-            library::library_scan,
-            library::library_open,
-            library::library_remove,
-            library::library_import,
-            library::library_import_cancel,
-            library::read_text_file,
-            library::library_thumb,
+            ipc::tasks::enqueue_task,
+            ipc::tasks::enqueue_batch,
+            ipc::tasks::enqueue_links,
+            ipc::tasks::probe_metadata,
+            ipc::tasks::cancel_task,
+            ipc::tasks::remove_task,
+            ipc::tasks::pause_queue,
+            ipc::tasks::resume_queue,
+            ipc::tasks::queue_state,
+            ipc::tasks::list_tasks,
+            ipc::settings::get_settings,
+            ipc::settings::save_settings,
+            ipc::settings::update_ytdlp,
+            update::commands::get_update_status,
+            update::commands::check_app_update,
+            update::commands::download_app_update,
+            update::commands::install_app_update,
+            update::commands::open_manual_update,
+            update::commands::cancel_pending_update,
+            library::commands::library_query,
+            library::commands::library_scan,
+            library::commands::library_open,
+            library::commands::library_remove,
+            library::commands::library_import,
+            library::commands::library_import_cancel,
+            library::commands::read_text_file,
+            library::commands::library_thumb,
             practice::practice_open,
             practice::practice_play,
             practice::practice_pause,

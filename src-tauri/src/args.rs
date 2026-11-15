@@ -242,6 +242,8 @@ pub struct ArgsRequest<'a> {
     pub archive: &'a Path,
     pub ffmpeg_dir: &'a Path,
     pub thumbs_dir: Option<&'a Path>,
+    /// `--embed-thumbnail` for audio; mirrors the `embedThumbnail` setting.
+    pub embed_thumbnail: bool,
 }
 
 const MEDIA_NAME: &str = "%(id)s - %(title)s.%(ext)s";
@@ -316,7 +318,9 @@ pub fn build(request: &ArgsRequest<'_>) -> Result<Vec<OsString>, ArgsError> {
             push(&mut args, "--audio-quality");
             let quality = format!("{}K", request.audio_kbps);
             push(&mut args, &quality);
-            push(&mut args, "--embed-thumbnail");
+            if request.embed_thumbnail {
+                push(&mut args, "--embed-thumbnail");
+            }
             push(&mut args, "--add-metadata");
         }
         Mode::Video => {
@@ -428,7 +432,25 @@ mod tests {
             archive,
             ffmpeg_dir: bin,
             thumbs_dir: None,
+            embed_thumbnail: true,
         }
+    }
+
+    #[test]
+    fn embedding_can_be_turned_off() {
+        let (out, archive, bin) = paths();
+        let mut request = request(Mode::Audio, Quality::P1080, None, &out, &archive, &bin);
+        request.embed_thumbnail = false;
+
+        let args: Vec<String> = build(&request)
+            .unwrap()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(!args.iter().any(|arg| arg == "--embed-thumbnail"));
+        // Tags stay: only the cover is optional.
+        assert!(args.iter().any(|arg| arg == "--add-metadata"));
     }
 
     #[test]

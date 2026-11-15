@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { formatPercent } from "../lib/format";
 
 export type TaskMode = "audio" | "video";
 export type DownloadMode = TaskMode | "both" | "clip";
@@ -119,12 +120,38 @@ export function pauseQueue(): Promise<QueueState> {
   return invoke<QueueState>("pause_queue");
 }
 
+/** Snapshot of the queue after a page reload or a screen switch. */
+export function listTasks(): Promise<TaskSnapshot[]> {
+  return invoke<TaskSnapshot[]>("list_tasks");
+}
+
+export function getQueueState(): Promise<QueueState> {
+  return invoke<QueueState>("queue_state");
+}
+
 export function resumeQueue(): Promise<QueueState> {
   return invoke<QueueState>("resume_queue");
 }
 
 export function cancelTask(id: string): Promise<void> {
   return invoke<void>("cancel_task", { id });
+}
+
+/** Drops a finished task from the history; a running one must be cancelled. */
+export function removeTask(id: string): Promise<void> {
+  return invoke<void>("remove_task", { id });
+}
+
+const TERMINAL_STATES: readonly TaskState[] = [
+  "done",
+  "skipped",
+  "partial",
+  "failed",
+  "canceled",
+];
+
+export function isTerminalState(state: TaskState): boolean {
+  return TERMINAL_STATES.includes(state);
 }
 
 type Handlers = {
@@ -175,119 +202,6 @@ export function applyProgress(
   );
 }
 
-export function formatPercent(percent: number): string {
-  return `${Math.round(percent)}%`;
-}
-
-export function formatSpeed(
-  bytesPerSecond: number | null,
-  language: "ru" | "en" = "ru",
-): string {
-  if (bytesPerSecond === null || !Number.isFinite(bytesPerSecond)) return "—";
-  const separator = language === "ru" ? "," : ".";
-  if (bytesPerSecond >= 1024 * 1024) {
-    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1).replace(".", separator)} ${
-      language === "ru" ? "МБ/с" : "MB/s"
-    }`;
-  }
-  if (bytesPerSecond >= 1024) {
-    return `${Math.round(bytesPerSecond / 1024)} ${
-      language === "ru" ? "КБ/с" : "KB/s"
-    }`;
-  }
-  return `${Math.round(bytesPerSecond)} ${language === "ru" ? "Б/с" : "B/s"}`;
-}
-
-export function formatEta(seconds: number | null): string {
-  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return "";
-  const total = Math.round(seconds);
-  const minutes = Math.floor(total / 60);
-  const rest = total % 60;
-  return `${minutes}:${rest.toString().padStart(2, "0")}`;
-}
-
-export function formatDuration(seconds: number | null): string {
-  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return "";
-  const total = Math.round(seconds);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const rest = total % 60;
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, "0")}:${rest.toString().padStart(2, "0")}`;
-  }
-  return `${minutes}:${rest.toString().padStart(2, "0")}`;
-}
-
-/**
- * Mirrors the backend parser: `SS`, `MM:SS` or `HH:MM:SS`.
- * Returns `null` for anything else.
- */
-export function parseTimecode(raw: string): number | null {
-  const text = raw.trim();
-  if (!text) return null;
-  const parts = text.split(":");
-  if (parts.length > 3 || parts.some((part) => part === "")) return null;
-  let seconds = 0;
-  for (let index = 0; index < parts.length; index += 1) {
-    const part = parts[index];
-    if (!/^\d+$/.test(part)) return null;
-    const value = Number(part);
-    const isHours = parts.length === 3 && index === 0;
-    if (parts.length > 1 && !isHours && value >= 60) return null;
-    seconds = seconds * 60 + value;
-  }
-  return seconds;
-}
-
-/** `90` → `00:01:30`, matching the strings sent to the backend. */
-export function formatTimecode(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const rest = total % 60;
-  return [hours, minutes, rest]
-    .map((value) => value.toString().padStart(2, "0"))
-    .join(":");
-}
-
-export function formatViews(
-  count: number | null,
-  language: "ru" | "en" = "ru",
-): string {
-  if (count === null || !Number.isFinite(count)) return "";
-  const separator = language === "ru" ? "," : ".";
-  const decimal = (value: number) => value.toFixed(1).replace(".", separator);
-  if (language === "en") {
-    if (count >= 1_000_000_000) return `${decimal(count / 1_000_000_000)}B views`;
-    if (count >= 1_000_000) return `${decimal(count / 1_000_000)}M views`;
-    if (count >= 1_000) return `${Math.round(count / 1_000)}K views`;
-    return `${count} ${count === 1 ? "view" : "views"}`;
-  }
-  if (count >= 1_000_000_000) {
-    return `${decimal(count / 1_000_000_000)} млрд просмотров`;
-  }
-  if (count >= 1_000_000) {
-    return `${decimal(count / 1_000_000)} млн просмотров`;
-  }
-  if (count >= 1_000) {
-    return `${Math.round(count / 1_000)} тыс. просмотров`;
-  }
-  return `${count} просмотров`;
-}
-
-export function formatUploadDate(
-  raw: string | null,
-  language: "ru" | "en" = "ru",
-): string {
-  if (!raw || !/^\d{8}$/.test(raw)) return raw ?? "";
-  const day = raw.slice(6, 8);
-  const month = raw.slice(4, 6);
-  const year = raw.slice(0, 4);
-  return language === "ru"
-    ? `${day}.${month}.${year}`
-    : `${month}/${day}/${year}`;
-}
-
 export function stateLabel(
   task: TaskSnapshot,
   language: "ru" | "en" = "ru",
@@ -327,3 +241,12 @@ export function stateLabel(
       return labels.canceled;
   }
 }
+export {
+  formatDuration,
+  formatEta,
+  formatPercent,
+  formatSpeed,
+  formatUploadDate,
+  formatViews,
+} from "../lib/format";
+export { formatTimecode, parseTimecode } from "../lib/timecode";

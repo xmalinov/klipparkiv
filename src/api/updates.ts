@@ -54,19 +54,5 @@ export function subscribeUpdate(
   return listen<UpdateStatus>("update://state", (event) => handler(event.payload));
 }
 
-export function formatBytes(
-  bytes: number | null,
-  language: "ru" | "en" = "ru",
-): string {
-  if (bytes === null || !Number.isFinite(bytes)) return "";
-  const separator = language === "ru" ? "," : ".";
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", separator)} ${
-      language === "ru" ? "МБ" : "MB"
-    }`;
-  }
-  if (bytes >= 1024) {
-    return `${Math.round(bytes / 1024)} ${language === "ru" ? "КБ" : "KB"}`;
-  }
-  return `${bytes} ${language === "ru" ? "Б" : "B"}`;
-}
+
+export { formatBytes } from "../lib/format";

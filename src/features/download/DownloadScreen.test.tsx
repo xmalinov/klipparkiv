@@ -2,6 +2,8 @@
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DownloadScreen from "./DownloadScreen";
+import { QueueProvider } from "../../providers/QueueProvider";
+import { SettingsProvider } from "../../providers/SettingsProvider";
 
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
@@ -75,6 +77,21 @@ const EXPECTED_EMPTY_CLIP = {
   playlistEnd: undefined,
 };
 
+/**
+ * The queue lives in `QueueProvider` now: the screen only renders it.
+ * Rendering the provider keeps the behaviour under test unchanged, including
+ * the list restored from `list_tasks` on mount.
+ */
+function renderScreen(props: { root?: string } = {}) {
+  return render(
+    <SettingsProvider>
+      <QueueProvider>
+        <DownloadScreen {...props} />
+      </QueueProvider>
+    </SettingsProvider>,
+  );
+}
+
 describe("DownloadScreen", () => {
   beforeEach(() => {
     invoke.mockReset();
@@ -92,7 +109,7 @@ describe("DownloadScreen", () => {
   it("enqueues an audio download", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen root="C:\\apps\\klipparkiv" />);
+    renderScreen({ root: "C:\\apps\\klipparkiv" });
 
     await user.type(
       screen.getByLabelText("Ссылка на видео"),
@@ -120,7 +137,7 @@ describe("DownloadScreen", () => {
   it("sends the selected quality for video", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([{ ...task, mode: "video" }]);
-    render(<DownloadScreen root="C:\\apps" />);
+    renderScreen({ root: "C:\\apps" });
 
     await user.click(screen.getByRole("tab", { name: "Видео" }));
     await user.selectOptions(screen.getByRole("combobox"), "720");
@@ -146,7 +163,7 @@ describe("DownloadScreen", () => {
   it("enqueues both audio and video as one request", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task, { ...task, id: "t2", mode: "video" }]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(screen.getByRole("tab", { name: "Аудио+Видео" }));
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/x");
@@ -172,7 +189,7 @@ describe("DownloadScreen", () => {
   it("sends clip range for a video clip", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([{ ...task, mode: "video", clip: true }]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(screen.getByRole("tab", { name: "Клип" }));
     await user.type(screen.getByLabelText("Начало клипа"), "1:30");
@@ -200,7 +217,7 @@ describe("DownloadScreen", () => {
   it("allows an open clip end", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([{ ...task, mode: "video", clip: true }]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(screen.getByRole("tab", { name: "Клип" }));
     await user.type(screen.getByLabelText("Начало клипа"), "1:30");
@@ -221,7 +238,7 @@ describe("DownloadScreen", () => {
 
   it("rejects a clip whose start is after its end", async () => {
     const user = userEvent.setup();
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(screen.getByRole("tab", { name: "Клип" }));
     await user.type(screen.getByLabelText("Начало клипа"), "2:00");
@@ -236,7 +253,7 @@ describe("DownloadScreen", () => {
 
   it("clears the clip with the whole-video chip", async () => {
     const user = userEvent.setup();
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(screen.getByRole("tab", { name: "Клип" }));
     await user.type(screen.getByLabelText("Начало клипа"), "1:30");
@@ -252,7 +269,7 @@ describe("DownloadScreen", () => {
         ? Promise.resolve(info)
         : Promise.resolve([task]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
     await screen.findByText(info.title, {}, { timeout: 2000 });
@@ -279,7 +296,7 @@ describe("DownloadScreen", () => {
         ? Promise.resolve(info)
         : Promise.resolve([task]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
 
@@ -298,7 +315,7 @@ describe("DownloadScreen", () => {
         ? Promise.resolve(playlist)
         : Promise.resolve([task]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(
       screen.getByLabelText("Ссылка на видео"),
@@ -324,7 +341,7 @@ describe("DownloadScreen", () => {
         ? Promise.resolve(playlist)
         : Promise.resolve([{ ...task, playlistCount: 42 }]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(
       screen.getByLabelText("Ссылка на видео"),
@@ -354,7 +371,7 @@ describe("DownloadScreen", () => {
         ? Promise.resolve(playlist)
         : Promise.resolve([task]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(
       screen.getByLabelText("Ссылка на видео"),
@@ -381,7 +398,7 @@ describe("DownloadScreen", () => {
         ? new Promise(() => {})
         : Promise.resolve([task]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(
       screen.getByLabelText("Ссылка на видео"),
@@ -403,7 +420,7 @@ describe("DownloadScreen", () => {
         ? Promise.reject("ERROR: playlist unavailable")
         : Promise.resolve([task]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(
       screen.getByLabelText("Ссылка на видео"),
@@ -428,7 +445,7 @@ describe("DownloadScreen", () => {
         ? Promise.reject("ERROR: video unavailable")
         : Promise.resolve([task]),
     );
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
 
@@ -439,7 +456,7 @@ describe("DownloadScreen", () => {
   it("shows backend validation errors", async () => {
     const user = userEvent.setup();
     invoke.mockRejectedValue("Ссылка должна начинаться с http:// или https://");
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "not a link");
     await user.click(screen.getByRole("button", { name: "Скачать" }));
@@ -452,7 +469,7 @@ describe("DownloadScreen", () => {
   it("updates progress from events", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
     await user.click(screen.getByRole("button", { name: "Скачать" }));
@@ -484,7 +501,7 @@ describe("DownloadScreen", () => {
         playlistCount: 42,
       },
     ]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
     await user.click(screen.getByRole("button", { name: "Скачать" }));
@@ -496,7 +513,7 @@ describe("DownloadScreen", () => {
   it("marks an already downloaded task", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
     await user.click(screen.getByRole("button", { name: "Скачать" }));
@@ -513,7 +530,7 @@ describe("DownloadScreen", () => {
   it("marks a finished download", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
     await user.click(screen.getByRole("button", { name: "Скачать" }));
@@ -527,7 +544,7 @@ describe("DownloadScreen", () => {
   it("cancels a task", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
     await user.click(screen.getByRole("button", { name: "Скачать" }));
@@ -540,15 +557,36 @@ describe("DownloadScreen", () => {
     );
   });
 
+  it("removes a finished task instead of cancelling it", async () => {
+    const user = userEvent.setup();
+    invoke.mockImplementation((command: string) => {
+      if (command === "list_tasks")
+        return Promise.resolve([{ ...task, state: "done", percent: 100 }]);
+      if (command === "queue_state")
+        return Promise.resolve({ paused: false, running: 0, queued: 0 });
+      return Promise.resolve(null);
+    });
+    renderScreen();
+
+    await screen.findByText("Готово");
+    await user.click(screen.getByRole("button", { name: /Отменить/ }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("remove_task", { id: "t1" }),
+    );
+    expect(invoke).not.toHaveBeenCalledWith("cancel_task", { id: "t1" });
+    expect(screen.queryByText("Готово")).not.toBeInTheDocument();
+  });
+
   it("disables the button without a url", () => {
-    render(<DownloadScreen />);
+    renderScreen();
     expect(screen.getByRole("button", { name: "Скачать" })).toBeDisabled();
   });
 
   it("sends the selected audio bitrate", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.selectOptions(screen.getByLabelText("Качество аудио"), "128");
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/a");
@@ -565,7 +603,7 @@ describe("DownloadScreen", () => {
     const user = userEvent.setup();
     open.mockResolvedValue("D:\\Downloads");
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen root="C:\\apps\\klipparkiv" />);
+    renderScreen({ root: "C:\\apps\\klipparkiv" });
 
     await user.click(screen.getByRole("button", { name: "Изменить" }));
     expect(await screen.findByText(/папка вне приложения/i)).toBeInTheDocument();
@@ -584,7 +622,7 @@ describe("DownloadScreen", () => {
     const user = userEvent.setup();
     open.mockResolvedValue("D:\\Downloads");
     invoke.mockResolvedValue([task]);
-    render(<DownloadScreen root="C:\\apps\\klipparkiv" />);
+    renderScreen({ root: "C:\\apps\\klipparkiv" });
 
     await user.click(screen.getByRole("button", { name: "Изменить" }));
     await screen.findByText(/папка вне приложения/i);
@@ -603,7 +641,7 @@ describe("DownloadScreen", () => {
         return Promise.resolve({ paused: false, running: 1, queued: 0 });
       return Promise.resolve(null);
     });
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.type(screen.getByLabelText("Ссылка на видео"), "https://youtu.be/abc");
     await user.click(screen.getByRole("button", { name: "Скачать" }));
@@ -622,7 +660,7 @@ describe("DownloadScreen", () => {
     const user = userEvent.setup();
     open.mockResolvedValue("C:\\lists\\urls.txt");
     invoke.mockResolvedValue([task, { ...task, id: "t2" }]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(
       screen.getByRole("button", { name: "Из файла со ссылками…" }),
@@ -645,7 +683,7 @@ describe("DownloadScreen", () => {
   it("does nothing when the batch dialog is canceled", async () => {
     const user = userEvent.setup();
     open.mockResolvedValue(null);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(
       screen.getByRole("button", { name: "Из файла со ссылками…" }),
@@ -660,7 +698,7 @@ describe("DownloadScreen", () => {
   it("adds a pasted list of links", async () => {
     const user = userEvent.setup();
     invoke.mockResolvedValue([task, { ...task, id: "t2" }]);
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(screen.getByRole("button", { name: "Список ссылок" }));
     await user.type(
@@ -685,7 +723,7 @@ describe("DownloadScreen", () => {
 
   it("keeps only the first link from the list", async () => {
     const user = userEvent.setup();
-    render(<DownloadScreen />);
+    renderScreen();
 
     await user.click(screen.getByRole("button", { name: "Список ссылок" }));
     await user.type(
@@ -700,7 +738,7 @@ describe("DownloadScreen", () => {
   });
 
   it("reads dropped .txt link lists through the backend", async () => {
-    render(<DownloadScreen />);
+    renderScreen();
     invoke.mockImplementation((command: string) => {
       if (command === "read_text_file")
         return Promise.resolve("https://youtu.be/a");
@@ -720,7 +758,7 @@ describe("DownloadScreen", () => {
   });
 
   it("rejects dropped media files without reading them", async () => {
-    render(<DownloadScreen />);
+    renderScreen();
 
     await dropState.handler!(["C:\\tmp\\song.mp3"]);
 

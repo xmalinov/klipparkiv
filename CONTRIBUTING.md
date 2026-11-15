@@ -41,6 +41,8 @@ All of these must pass before a pull request is merged:
 npm run typecheck
 npm run test:run
 npm run build
+npm run check:contracts
+npm run check:types
 cargo fmt    --manifest-path src-tauri/Cargo.toml -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test   --manifest-path src-tauri/Cargo.toml
