@@ -10,6 +10,14 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.9.0-beta.2] — 2026-11-15
+
+Same refactor as 1.9.0-beta.1, with the macOS build fixed: the installer
+module was missing two imports, so the macOS bundle did not compile.
+
+Worth trying: everything from the beta.1 checklist, plus installing and
+updating on macOS.
+
 ### [1.9.0-beta.1] — 2026-11-15
 
 Test build of the internal refactor. It is published as a prerelease: it is
@@ -306,6 +314,13 @@ First public release.
 - Portable layout: settings and index in `data\`, media in `audio\` and `video\`.
 
 ## Русский
+
+### [1.9.0-beta.2] — 2026-11-15
+
+Тот же рефакторинг, что в 1.9.0-beta.1, с исправленной сборкой под macOS: в
+модуле установщика не хватало двух импортов, из-за чего бандл не собирался.
+
+Что проверить: всё из списка beta.1 плюс установку и обновление на macOS.
 
 ### [1.9.0-beta.1] — 2026-11-15
 
