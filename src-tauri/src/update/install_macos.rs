@@ -9,8 +9,11 @@ use crate::queue::TaskStore;
 #[cfg(target_os = "macos")]
 use crate::update::download::download_asset_file;
 #[cfg(target_os = "macos")]
+use crate::update::manifest::current_version;
+#[cfg(target_os = "macos")]
 use crate::update::state::{
-    STATE_ERROR, StagedAsset, UpdateStatus, UpdateStore, error_status, manual_status, set_status,
+    STATE_ERROR, StagedAsset, UpdateStatus, UpdateStore, error_status, installing_status,
+    manual_status, set_status,
 };
 #[cfg(target_os = "macos")]
 use crate::update::verify::{staged_path, verify_file};
