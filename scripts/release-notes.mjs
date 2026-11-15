@@ -4,6 +4,8 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 
+import { isPrerelease } from "./lib/version.mjs";
+
 const [version, out] = process.argv.slice(2);
 if (!version || !out) {
   console.error("usage: node scripts/release-notes.mjs <version> <out-file>");
@@ -52,7 +54,19 @@ const notes =
   sections.length >= 2
     ? `## English\n\n${sections[0]}\n\n---\n\n## Русский\n\n${sections.at(-1)}`
     : sections[0];
-const body = `${downloads}${notes}`;
+
+// A test build is published as a prerelease and is never offered to stable
+// users, so the release page has to say that out loud.
+const banner = isPrerelease(version)
+  ? `> **Test build / Тестовая сборка.** This is \`${version}\`, not a stable
+> release. It is not offered through in-app updates. Для обычной работы
+> скачайте последнюю стабильную версию со страницы Releases.
+
+---
+
+`
+  : "";
+const body = `${banner}${downloads}${notes}`;
 
 writeFileSync(out, `${body}\n`);
 console.log(`release notes for ${version}: ${out} (${body.length} chars)`);

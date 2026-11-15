@@ -244,6 +244,10 @@ jobs:
         with:
           name: Klipparkiv ${{ steps.version.outputs.version }}
           draft: true
+          # A hyphen in the tag (`v1.9.0-beta.1`) marks a test build. GitHub
+          # resolves releases/latest — the stable update channel — to the newest
+          # non-prerelease release, so a prerelease never reaches stable users.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           body_path: release/notes.md
           files: |
             release/*.zip

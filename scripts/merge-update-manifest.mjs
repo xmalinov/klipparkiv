@@ -7,6 +7,8 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 
+import { channelFor } from "./lib/version.mjs";
+
 function arg(name, fallback = undefined) {
   const index = process.argv.indexOf(`--${name}`);
   if (index === -1) return fallback;
@@ -71,7 +73,9 @@ for (const [platform, asset] of Object.entries(platforms)) {
 
 const manifest = {
   schema: 1,
-  channel: "stable",
+  // Derived from the version: `1.9.0-beta.1` is a beta build, `1.9.0` is
+  // stable. Only the stable channel is served from `releases/latest`.
+  channel: channelFor(version),
   version,
   pubDate: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
   notes: arg("notes", process.env.RELEASE_NOTES ?? ""),

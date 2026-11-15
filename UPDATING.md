@@ -35,6 +35,11 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`:
 The release workflow does **not** need a Developer ID or notarization. It needs
 only the existing updater signing key.
 
+A tag that contains a hyphen after the version (`v1.9.0-beta.1`) is built by the
+same workflow but created as a **prerelease**, so `releases/latest` — the URL
+the app's updater reads — keeps pointing at the last stable release. See
+[Test builds](#test-builds).
+
 ## Release checklist
 
 1. Bump the version (see below) and move the `Unreleased` changelog entries into
@@ -71,7 +76,23 @@ only the existing updater signing key.
 
 ## Version bump
 
-Bump the version in all six files:
+One command writes the version into all six places:
+
+```bash
+npm run release:bump 1.9.0        # stable release
+npm run release:bump 1.9.0-beta.1 # test build
+```
+
+It validates the tree first and refuses to write anything when the files already
+disagree, so a typo cannot leave a half-bumped tree. `--dry-run` prints the plan
+without touching the files. Then check the result:
+
+```bash
+npm run check:version
+node scripts/check-version.mjs --tag v1.9.0
+```
+
+The six files are:
 
 - `package.json`
 - `package-lock.json` (the root and `packages[""]` versions)
@@ -80,15 +101,62 @@ Bump the version in all six files:
 - `src-tauri/Cargo.lock` (the `klipparkiv` package entry)
 - `README.txt` (the `Klipparkiv <version>` line)
 
-Refresh the lockfile after the `Cargo.toml` bump, then check:
+The check refuses a mismatch between any of the version files and the tag, and
+refuses a value that is not a semantic version. The release workflow checks the
+tag against `package.json`.
 
-```bash
-cargo check --manifest-path src-tauri/Cargo.toml
-node scripts/check-version.mjs --tag v1.6.2
-```
+## Test builds
 
-The check refuses a mismatch between any of the version files and the tag.
-The release workflow checks the tag against `package.json`.
+A test build is a normal build published as a prerelease, so the stable channel
+never sees it: `releases/latest` resolves to the newest non-prerelease release,
+and the updater ignores versions that are not newer than the running one.
+
+1. Bump to a prerelease version and add a matching CHANGELOG section:
+
+   ```bash
+   npm run release:bump 1.9.0-beta.1
+   # CHANGELOG.md: ### [1.9.0-beta.1] — YYYY-MM-DD
+   npm run check:version
+   node scripts/check-version.mjs --tag v1.9.0-beta.1
+   ```
+
+2. Commit, tag and push. Any tag with a hyphen in the version is created as a
+   prerelease by `release.yml`:
+
+   ```bash
+   git commit -am "chore: release 1.9.0-beta.1"
+   git tag -a v1.9.0-beta.1 -m "Klipparkiv 1.9.0-beta.1"
+   git push origin HEAD v1.9.0-beta.1
+   ```
+
+3. Check the draft, then publish it without clearing the prerelease flag:
+
+   ```bash
+   gh release edit v1.9.0-beta.1 --draft=false
+   ```
+
+   The release body gets a “test build, not a stable release” banner
+   (`scripts/release-notes.mjs`). Testers download from the release page
+   directly; nothing on the landing page or in `releases/latest` changes.
+
+4. When the beta is finished, bump to `1.9.0` and ship it normally. Semver puts
+   `1.9.0` above `1.9.0-beta.1`, so testers are offered the stable release.
+
+Notes:
+
+- Testers stay on the stable update channel: a `1.9.0-beta.1` build checks
+  `releases/latest` and sees only stable releases, so it will not offer the next
+  beta. Publish each beta link to the testers directly.
+- Never reuse a version number that was already published; the updater ignores a
+  version that is not newer.
+- On Windows a test build next to a different folder is fully isolated. On
+  macOS it writes to `~/Library/Application Support/Klipparkiv` unless a
+  `.klipparkiv-portable` marker sits next to the `.app`, so it shares the
+  library with the stable build. `library.db` and the practice state are
+  migrated forward — back up `data/` before running a test build on real data,
+  because an older build cannot read the migrated files.
+- To point a debug build at a test manifest, use `KLIPPEARKIV_UPDATE_URL`
+  (documented in [Testing an update locally](#testing-an-update-locally)).
 
 ## Manual release
 

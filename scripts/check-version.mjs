@@ -5,6 +5,8 @@
 
 import { readFileSync } from "node:fs";
 
+import { channelFor, parseVersion, readmeVersion } from "./lib/version.mjs";
+
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const npmLock = JSON.parse(readFileSync("package-lock.json", "utf8"));
 const cargo = readFileSync("src-tauri/Cargo.toml", "utf8");
@@ -30,9 +32,9 @@ if (!lockVersion) {
   process.exit(1);
 }
 
-const readmeTxtVersion = readmeTxt.match(/^Klipparkiv\s+(\d+\.\d+\.\d+)/m)?.[1];
+const readmeTxtVersion = readmeVersion(readmeTxt);
 if (!readmeTxtVersion) {
-  console.error("cannot find the version in README.txt");
+  console.error("cannot find a `Klipparkiv <version>` line in README.txt");
   process.exit(1);
 }
 
@@ -45,6 +47,16 @@ const versions = {
   "tauri.conf.json": tauri.version,
   "README.txt": readmeTxtVersion,
 };
+
+// A prerelease suffix (`1.9.0-beta.1`) is legal and marks a test build, but the
+// value still has to be a semantic version so the updater can compare it.
+for (const [file, value] of Object.entries(versions)) {
+  if (!parseVersion(value)) {
+    console.error(`${file}: not a semantic version: ${String(value)}`);
+    process.exit(1);
+  }
+}
+
 const unique = new Set(Object.values(versions));
 if (unique.size !== 1) {
   console.error("version mismatch:", versions);
@@ -59,4 +71,7 @@ if (tag && tag.startsWith("v") && tag !== `v${version}`) {
   process.exit(1);
 }
 
-console.log(`version ${version} is consistent${tag ? ` with tag ${tag}` : ""}`);
+const channel = channelFor(version);
+console.log(
+  `version ${version} is consistent (${channel} channel)${tag ? ` with tag ${tag}` : ""}`,
+);

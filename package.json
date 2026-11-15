@@ -28,6 +28,7 @@
     "check:version": "node scripts/check-version.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:types": "node scripts/check-types.mjs",
+    "release:bump": "node scripts/bump-version.mjs",
     "manifest:merge": "node scripts/merge-update-manifest.mjs",
     "tauri": "tauri"
   },
