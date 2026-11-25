@@ -10,6 +10,26 @@ to [Semantic Versioning](https://semver.org/).
 
 ## English
 
+### [1.9.0] — 2026-11-25
+
+Internal refactor release. Features are the same as 1.8.0; the code under them
+was reorganised, and the beta builds of this line were checked on Windows and
+macOS.
+
+#### Changed
+
+- Commands, library storage, download queue and updater are split into
+  modules; settings and queue state are shared through providers instead of
+  being fetched by every screen.
+- Backend errors appear in dialogs as readable messages instead of a raw
+  string.
+- The update banner shows a one-line summary of what changed in the release.
+- Test builds are published as prereleases, so they never reach stable users.
+- The SQLite layer moved to rusqlite 0.43, plus routine dependency updates.
+
+If anything behaves differently from 1.8.0, please report it — that is what
+this release needs to hear.
+
 ### [1.9.0-beta.2] — 2026-11-15
 
 Same refactor as 1.9.0-beta.1, with the macOS build fixed: the installer
@@ -314,6 +334,25 @@ First public release.
 - Portable layout: settings and index in `data\`, media in `audio\` and `video\`.
 
 ## Русский
+
+### [1.9.0] — 2026-11-25
+
+Релиз внутреннего рефакторинга. Функции те же, что в 1.8.0; код под ними
+переорганизован, а бета-сборки этой линии проверены на Windows и macOS.
+
+#### Изменено
+
+- Команды, хранилище библиотеки, очередь загрузок и апдейтер разложены по
+  модулям; настройки и состояние очереди живут в общих провайдерах, а не
+  загружаются каждым экраном.
+- Ошибки бэкенда приходят в диалоги читаемым текстом, а не сырой строкой.
+- В баннере обновления появилась строка о том, что изменилось в релизе.
+- Тестовые сборки публикуются как prerelease и не доходят до стабильных
+  пользователей.
+- Слой SQLite переведён на rusqlite 0.43, плюс плановые обновления зависимостей.
+
+Если что-то ведёт себя не как в 1.8.0 — напишите об этом: именно этого релизу и
+нужно.
 
 ### [1.9.0-beta.2] — 2026-11-15
 
